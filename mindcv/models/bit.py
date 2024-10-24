@@ -6,7 +6,8 @@ Refer to Big Transfer (BiT): General Visual Representation Learning.
 from typing import List, Optional, Type, Union
 
 import mindspore
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, ops, mint
+import mindspore.mint.nn.functional as F
 
 from .helpers import load_pretrained
 from .layers.pooling import GlobalAvgPooling
@@ -68,13 +69,14 @@ class StdConv2d(nn.Conv2d):
             padding,
             group,
         )
+        # TODO: ReduceMean 已收录，不支持
         self.mean_op = ops.ReduceMean(keep_dims=True)
 
     def construct(self, x):
         w = self.weight
         m = self.mean_op(w, [1, 2, 3])
         v = w.var((1, 2, 3), keepdims=True)
-        w = (w - m) / mindspore.ops.sqrt(v + 1e-10)
+        w = (w - m) / mindspore.mint.sqrt(v + 1e-10)
         output = self.conv2d(x, w)
         return output
 
@@ -105,7 +107,7 @@ class Bottleneck(nn.Cell):
     ) -> None:
         super().__init__()
         if norm is None:
-            norm = nn.GroupNorm
+            norm = mint.nn.GroupNorm
 
         width = int(channels * (base_width / 64.0)) * groups
         self.gn1 = norm(32, in_channels)
@@ -117,7 +119,7 @@ class Bottleneck(nn.Cell):
         self.conv3 = StdConv2d(width, channels * self.expansion,
                                kernel_size=1, stride=1)
 
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.down_sample = down_sample
 
     def construct(self, x: Tensor) -> Tensor:
@@ -174,7 +176,7 @@ class BiT_ResNet(nn.Cell):
         super().__init__()
 
         if norm is None:
-            norm = nn.GroupNorm
+            norm = mint.nn.GroupNorm
 
         self.norm: nn.Cell = norm  # add type hints to make pylint happy
         self.input_channels = 64 * wf
@@ -183,8 +185,9 @@ class BiT_ResNet(nn.Cell):
 
         self.conv1 = StdConv2d(in_channels, self.input_channels, kernel_size=7,
                                stride=2, pad_mode="pad", padding=3)
-        self.pad = nn.ConstantPad2d(1, 0)
-        self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, pad_mode="valid")
+        # TODO: ConsttantPad2d 表格中不存在的接口，未转测，使用F.pad修改
+        # self.pad = nn.ConstantPad2d(1, 0)
+        self.max_pool = mint.nn.MaxPool2d(kernel_size=3, stride=2, padding=0)
 
         self.layer1 = self._make_layer(block, 64 * wf, layers[0])
         self.layer2 = self._make_layer(block, 128 * wf, layers[1], stride=2)
@@ -192,7 +195,7 @@ class BiT_ResNet(nn.Cell):
         self.layer4 = self._make_layer(block, 512 * wf, layers[3], stride=2)
 
         self.gn = norm(32, 2048 * wf)
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.pool = GlobalAvgPooling(keep_dims=True)
         self.classifier = nn.Conv2d(512 * block.expansion * wf, num_classes, kernel_size=1, has_bias=True)
 
@@ -240,7 +243,8 @@ class BiT_ResNet(nn.Cell):
 
     def root(self, x: Tensor) -> Tensor:
         x = self.conv1(x)
-        x = self.pad(x)
+        # TODO: 暂时使用mint.nn.functional as F 接口替代
+        x = F.pad(x, (1, 1, 1, 1), value=0)
         x = self.max_pool(x)
         return x
 
