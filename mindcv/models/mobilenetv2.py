@@ -6,7 +6,7 @@ Refer to MobileNetV2: Inverted Residuals and Linear Bottlenecks.
 import math
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn
+from mindspore import Tensor, nn, mint
 
 from .helpers import build_model_with_cfg, make_divisible
 from .layers.compatibility import Dropout
@@ -140,17 +140,19 @@ class InvertedResidual(nn.Cell):
             # pw
             layers.extend([
                 nn.Conv2d(in_channels, hidden_dim, 1, 1, pad_mode="pad", padding=0, has_bias=False),
-                nn.BatchNorm2d(hidden_dim),
+                mint.nn.BatchNorm2d(hidden_dim),
+                # TODO: nn.ReLU6 已收录，不支持
                 nn.ReLU6()
             ])
         layers.extend([
             # dw
             nn.Conv2d(hidden_dim, hidden_dim, 3, stride, pad_mode="pad", padding=1, group=hidden_dim, has_bias=False),
             nn.BatchNorm2d(hidden_dim),
+            # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
             # pw-linear
             nn.Conv2d(hidden_dim, out_channels, 1, 1, pad_mode="pad", padding=0, has_bias=False),
-            nn.BatchNorm2d(out_channels),
+            mint.nn.BatchNorm2d(out_channels),
         ])
         self.layers = nn.SequentialCell(layers)
 
@@ -201,6 +203,7 @@ class MobileNetV2(nn.Cell):
         features = [
             nn.Conv2d(in_channels, input_channels, 3, 2, pad_mode="pad", padding=1, has_bias=False),
             nn.BatchNorm2d(input_channels),
+            # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
         ]
 
@@ -226,6 +229,7 @@ class MobileNetV2(nn.Cell):
         features.extend([
             nn.Conv2d(input_channels, last_channels, 1, 1, pad_mode="pad", padding=0, has_bias=False),
             nn.BatchNorm2d(last_channels),
+            # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
         ])
 
