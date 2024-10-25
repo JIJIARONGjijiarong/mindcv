@@ -581,8 +581,8 @@ class CoaT(nn.Cell):
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
             elif isinstance(cell, mint.nn.LayerNorm):
-                cell.weight.set_data(init.initializer(init.Constant(1.0), cell.gamma.shape))
-                cell.bias.set_data(init.initializer(init.Constant(0), cell.beta.shape))
+                cell.weight.set_data(init.initializer(init.Constant(1.0), cell.weight.shape))
+                cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
 
     def insert_cls(self, x, cls_token) -> Tensor:
         t0 = x.shape[0]
