@@ -10,7 +10,7 @@ import numpy as np
 
 import mindspore as ms
 import mindspore.common.initializer as init
-from mindspore import Parameter, Tensor, nn, ops
+from mindspore import Parameter, Tensor, nn, ops, mint
 
 from .helpers import load_pretrained
 from .layers.compatibility import Dropout, Split
@@ -53,17 +53,17 @@ default_cfgs = {
         input_size=(3, 256, 256)),
 }
 
-
-class LayerNorm(nn.LayerNorm):
+# TODO: nn.LayerNorm 需要修改为mint.nn.LayerNorm
+class LayerNorm(mint.nn.LayerNorm):
     r"""LayerNorm for channels_first tensors with 2d spatial dimensions (ie N, C, H, W)."""
 
     def __init__(
         self,
         normalized_shape: Tuple[int],
-        epsilon: float,
+        eps: float,
         norm_axis: int = -1,
     ) -> None:
-        super().__init__(normalized_shape=normalized_shape, epsilon=epsilon)
+        super().__init__(normalized_shape=normalized_shape, epsilon=eps)
         assert norm_axis in (-1, 1), "ConvNextLayerNorm's norm_axis must be 1 or -1."
         self.norm_axis = norm_axis
 
@@ -71,9 +71,9 @@ class LayerNorm(nn.LayerNorm):
         if self.norm_axis == -1:
             y, _, _ = self.layer_norm(input_x, self.gamma, self.beta)
         else:
-            input_x = ops.transpose(input_x, (0, 2, 3, 1))
+            input_x = mint.permute(input_x, (0, 2, 3, 1))
             y, _, _ = self.layer_norm(input_x, self.gamma, self.beta)
-            y = ops.transpose(y, (0, 3, 1, 2))
+            y = mint.permute(y, (0, 3, 1, 2))
         return y
 
 
@@ -87,7 +87,7 @@ class PositionalEncodingFourier(nn.Cell):
         self.dim = dim
 
     def construct(self, B, H, W):
-        mask = Tensor(np.zeros((B, H, W))).astype(ms.bool_)
+        mask = mint.zeros((B, H, W), dtype=ms.bool_)
         not_mask = ~mask
 
         y_embed = not_mask.cumsum(1, dtype=ms.float32)
@@ -97,21 +97,21 @@ class PositionalEncodingFourier(nn.Cell):
         y_embed = y_embed / (y_embed[:, -1:, :] + eps) * self.scale
         x_embed = x_embed / (x_embed[:, :, -1:] + eps) * self.scale
 
-        dim_t = ms.numpy.arange(self.hidden_dim, dtype=ms.float32)
+        dim_t = mint.arange(self.hidden_dim, dtype=ms.float32)
         dim_t = self.temperature ** (2 * (dim_t // 2) / self.hidden_dim)
 
         pos_x = x_embed[:, :, :, None] / dim_t
         pos_y = y_embed[:, :, :, None] / dim_t
 
-        pos_x = ops.stack((ops.sin(pos_x[:, :, :, 0::2]),
-                           ops.cos(pos_x[:, :, :, 1::2])), axis=4)
+        pos_x = mint.stack([mint.sin(pos_x[:, :, :, 0::2]),
+                           mint.cos(pos_x[:, :, :, 1::2])], dim=4)
         s1, s2, s3, _, _ = pos_x.shape
-        pos_x = ops.reshape(pos_x, (s1, s2, s3, -1))
-        pos_y = ops.stack((ops.sin(pos_y[:, :, :, 0::2]),
-                           ops.cos(pos_y[:, :, :, 1::2])), axis=4)
+        pos_x = mint.reshape(pos_x, (s1, s2, s3, -1))
+        pos_y = mint.stack([mint.sin(pos_y[:, :, :, 0::2]),
+                           mint.cos(pos_y[:, :, :, 1::2])], dim=4)
         s1, s2, s3, _, _ = pos_y.shape
-        pos_y = ops.reshape(pos_y, (s1, s2, s3, -1))
-        pos = ops.transpose(ops.concat((pos_y, pos_x), axis=3), (0, 3, 1, 2))
+        pos_y = mint.reshape(pos_y, (s1, s2, s3, -1))
+        pos = mint.permute(mint.concat((pos_y, pos_x), dim=3), (0, 3, 1, 2))
         pos = self.token_projection(pos)
         return pos
 
@@ -128,13 +128,13 @@ class ConvEncoder(nn.Cell):
         super().__init__()
         self.dwconv = nn.Conv2d(dim, dim, kernel_size=kernel_size, pad_mode="pad", padding=kernel_size // 2, group=dim,
                                 has_bias=True)
-        self.norm = LayerNorm((dim,), epsilon=1e-6)
-        self.pwconv1 = nn.Dense(dim, expan_ratio * dim)
-        self.act = nn.GELU(approximate=False)
-        self.pwconv2 = nn.Dense(expan_ratio * dim, dim)
+        self.norm = LayerNorm((dim,), eps=1e-6)
+        self.pwconv1 = mint.nn.Linear(dim, expan_ratio * dim)
+        self.act = mint.nn.GELU()
+        self.pwconv2 = mint.nn.Linear(expan_ratio * dim, dim)
 
         self.gamma1 = (
-            Parameter(Tensor(layer_scale_init_value * np.ones(dim), ms.float32), requires_grad=True)
+            Parameter(layer_scale_init_value * mint.ones((dim,), dtype=ms.float32), requires_grad=True)
             if layer_scale_init_value > 0.0
             else None
         )
@@ -144,14 +144,14 @@ class ConvEncoder(nn.Cell):
         input = x
         x = self.dwconv(x)
 
-        x = ops.transpose(x, (0, 2, 3, 1))
+        x = mint.permute(x, (0, 2, 3, 1))
         x = self.norm(x)
         x = self.pwconv1(x)
         x = self.act(x)
         x = self.pwconv2(x)
         if self.gamma1 is not None:
             x = self.gamma1 * x
-        x = ops.transpose(x, (0, 3, 1, 2))
+        x = mint.permute(x, (0, 3, 1, 2))
         x = input + self.drop_path(x)
         return x
 
@@ -185,15 +185,15 @@ class SDTAEncoder(nn.Cell):
         self.pos_embd = None
         if use_pos_emb:
             self.pos_embd = PositionalEncodingFourier(dim=dim)
-        self.norm_xca = LayerNorm((dim,), epsilon=1e-6)
-        self.gamma_xca = Parameter(Tensor(layer_scale_init_value * np.ones(dim), ms.float32),
+        self.norm_xca = LayerNorm((dim,), eps=1e-6)
+        self.gamma_xca = Parameter(layer_scale_init_value * mint.ones((dim,), dtype=ms.float32),
                                    requires_grad=True) if layer_scale_init_value > 0. else None
         self.xca = XCA(dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
-        self.norm = LayerNorm((dim,), epsilon=1e-6)
-        self.pwconv1 = nn.Dense(dim, expan_ratio * dim)
-        self.act = nn.GELU(approximate=False)
-        self.pwconv2 = nn.Dense(expan_ratio * dim, dim)
-        self.gamma = Parameter(Tensor(layer_scale_init_value * np.ones((dim)), ms.float32),
+        self.norm = LayerNorm((dim,), eps=1e-6)
+        self.pwconv1 = mint.nn.Linear(dim, expan_ratio * dim)
+        self.act = mint.nn.GELU()
+        self.pwconv2 = mint.nn.Linear(expan_ratio * dim, dim)
+        self.gamma = Parameter(layer_scale_init_value * mint.ones((dim,), dtype=ms.float32),
                                requires_grad=True) if layer_scale_init_value > 0 else None
         self.drop_path = DropPath(drop_path) if drop_path > 0. else Identity()
         self.split = Split(split_size_or_sections=width, output_num=dim // width, axis=1)
@@ -226,18 +226,18 @@ class SDTAEncoder(nn.Cell):
             if i == 0:
                 out = sp
             else:
-                out = ops.concat((out, sp), 1)
-        x = ops.concat((out, spx[self.nums]), 1)
+                out = mint.concat((out, sp), 1)
+        x = mint.concat((out, spx[self.nums]), 1)
         # XCA
         B, C, H, W = x.shape
-        x = ops.reshape(x, (B, C, H * W))
-        x = ops.transpose(x, (0, 2, 1))
+        x = mint.reshape(x, (B, C, H * W))
+        x = mint.permute(x, (0, 2, 1))
         if self.pos_embd is not None:
-            pos_encoding = ops.transpose(ops.reshape(self.pos_embd(B, H, W), (B, -1, x.shape[1])), (0, 2, 1))
+            pos_encoding = mint.permute(mint.reshape(self.pos_embd(B, H, W), (B, -1, x.shape[1])), (0, 2, 1))
             x = x + pos_encoding
         x = x + self.drop_path(self.gamma_xca * self.xca(self.norm_xca(x)))
         x = x.astype(ms.float32)
-        x = ops.reshape(x, (B, H, W, C))
+        x = mint.reshape(x, (B, H, W, C))
         # Inverted Bottleneck
         x = self.norm(x)
         x = self.pwconv1(x)
@@ -245,7 +245,7 @@ class SDTAEncoder(nn.Cell):
         x = self.pwconv2(x)
         if self.gamma is not None:
             x = self.gamma * x
-        x = ops.transpose(x, (0, 3, 1, 2))  # (N, H, W, C) -> (N, C, H, W)
+        x = mint.permute(x, (0, 3, 1, 2))  # (N, H, W, C) -> (N, C, H, W)
 
         x = input + self.drop_path(x)
         return x
@@ -262,30 +262,31 @@ class XCA(nn.Cell):
     ):
         super().__init__()
         self.num_heads = num_heads
-        self.temperature = Parameter(Tensor(np.ones((num_heads, 1, 1)), ms.float32))
+        self.temperature = Parameter(mint.ones((num_heads, 1, 1), dtype=ms.float32))
 
-        self.qkv = nn.Dense(dim, dim * 3, has_bias=qkv_bias)
+        self.qkv = mint.nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = Dropout(p=attn_drop)
-        self.proj = nn.Dense(dim, dim)
+        self.proj = mint.nn.Linear(dim, dim)
         self.proj_drop = Dropout(p=proj_drop)
 
     def construct(self, x: Tensor) -> Tensor:
         B, N, C = x.shape
-        qkv = ops.reshape(self.qkv(x), (B, N, 3, self.num_heads, C // self.num_heads))
-        qkv = ops.transpose(qkv, (2, 0, 3, 1, 4))
+        qkv = mint.reshape(self.qkv(x), (B, N, 3, self.num_heads, C // self.num_heads))
+        qkv = mint.permute(qkv, (2, 0, 3, 1, 4))
         q, k, v = qkv[0], qkv[1], qkv[2]
 
-        q = ops.transpose(q, (0, 1, 3, 2))
-        k = ops.transpose(k, (0, 1, 3, 2))
-        v = ops.transpose(v, (0, 1, 3, 2))
+        q = mint.permute(q, (0, 1, 3, 2))
+        k = mint.permute(k, (0, 1, 3, 2))
+        v = mint.permute(v, (0, 1, 3, 2))
+        # TODO: ops.L2Normalize 已收录，不支持
         l2_normalize = ops.L2Normalize(-1)
         q = l2_normalize(q)
         k = l2_normalize(k)
-        attn = (ops.matmul(q, ops.transpose(k, (0, 1, 3, 2)))) * self.temperature
+        attn = (ops.matmul(q, mint.permute(k, (0, 1, 3, 2)))) * self.temperature
         # -------------------
         attn = ops.Softmax(-1)(attn)
         attn = self.attn_drop(attn)
-        x = ops.reshape(ops.transpose((ops.matmul(attn, v)), (0, 3, 1, 2)), (B, N, C))
+        x = mint.reshape(mint.permute((ops.matmul(attn, v)), (0, 3, 1, 2)), (B, N, C))
         # # ------------------
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -330,12 +331,12 @@ class EdgeNeXt(nn.Cell):
         self.downsample_layers = nn.CellList()  # stem and 3 intermediate downsampling conv layers
         stem = nn.SequentialCell(
             nn.Conv2d(in_chans, dims[0], kernel_size=4, stride=4, has_bias=True),
-            LayerNorm((dims[0],), epsilon=1e-6, norm_axis=1),
+            LayerNorm((dims[0],), eps=1e-6, norm_axis=1),
         )
         self.downsample_layers.append(stem)
         for i in range(3):
             downsample_layer = nn.SequentialCell(
-                LayerNorm((dims[i],), epsilon=1e-6, norm_axis=1),
+                LayerNorm((dims[i],), eps=1e-6, norm_axis=1),
                 nn.Conv2d(dims[i], dims[i + 1], kernel_size=2, stride=2, has_bias=True),
             )
             self.downsample_layers.append(downsample_layer)
@@ -360,8 +361,8 @@ class EdgeNeXt(nn.Cell):
 
             self.stages.append(nn.SequentialCell(*stage_blocks))
             cur += depths[i]
-        self.norm = nn.LayerNorm((dims[-1],), epsilon=1e-6)  # Final norm layer
-        self.head = nn.Dense(dims[-1], num_classes)
+        self.norm = mint.nn.LayerNorm((dims[-1],), eps=1e-6)  # Final norm layer
+        self.head = mint.nn.Linear(dims[-1], num_classes)
 
         # self.head_dropout = Dropout(kwargs["classifier_dropout"])
         self.head_dropout = Dropout(p=0.0)
@@ -371,15 +372,15 @@ class EdgeNeXt(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, (nn.Dense, nn.Conv2d)):
+            if isinstance(cell, (mint.nn.Linear, nn.Conv2d)):
                 cell.weight.set_data(
                     init.initializer(init.TruncatedNormal(sigma=0.02), cell.weight.shape, cell.weight.dtype)
                 )
-                if isinstance(cell, nn.Dense) and cell.bias is not None:
+                if isinstance(cell, mint.nn.Linear) and cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, (nn.LayerNorm)):
-                cell.gamma.set_data(init.initializer(init.One(), cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer(init.Zero(), cell.beta.shape, cell.beta.dtype))
+            elif isinstance(cell, mint.nn.LayerNorm):
+                cell.weight.set_data(init.initializer(init.One(), cell.gamma.shape, cell.gamma.dtype))
+                cell.bias.set_data(init.initializer(init.Zero(), cell.beta.shape, cell.beta.dtype))
         self.head.weight.set_data(self.head.weight * self.head_init_scale)
         self.head.bias.set_data(self.head.bias * self.head_init_scale)
 
