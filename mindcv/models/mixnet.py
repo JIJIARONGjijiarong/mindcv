@@ -7,7 +7,7 @@ import math
 from typing import Optional
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, ops, mint
 
 from .helpers import load_pretrained
 from .layers.compatibility import Dropout
@@ -57,10 +57,9 @@ def _splitchannels(channels: int, num_groups: int) -> list:
 class Swish(nn.Cell):
     def __init__(self) -> None:
         super(Swish, self).__init__()
-        self.sigmoid = ops.Sigmoid()
 
     def construct(self, x: Tensor) -> Tensor:
-        return x * self.sigmoid(x)
+        return x * mint.sigmoid(x)
 
 
 class GroupedConv2d(nn.Cell):
@@ -113,7 +112,7 @@ class GroupedConv2d(nn.Cell):
             conv = self.grouped_conv[i]
             output.append(conv(x_split))
 
-        return ops.concat(output, axis=1)
+        return mint.concat(output, dim=1)
 
 
 class MDConv(nn.Cell):
@@ -163,7 +162,7 @@ class MDConv(nn.Cell):
             conv = self.mixed_depthwise_conv[i]
             output.append(conv(x_split))
 
-        return ops.concat(output, axis=1)
+        return mint.concat(output, dim=1)
 
 
 class MixNetBlock(nn.Cell):
@@ -183,7 +182,7 @@ class MixNetBlock(nn.Cell):
     ) -> None:
         super(MixNetBlock, self).__init__()
         assert activation in ["ReLU", "Swish"]
-        self.activation = Swish if activation == "Swish" else nn.ReLU
+        self.activation = Swish if activation == "Swish" else mint.nn.ReLU
 
         expand_channels = in_channels * expand_ratio
         self.residual_connection = (stride == 1 and in_channels == out_channels)
@@ -193,14 +192,14 @@ class MixNetBlock(nn.Cell):
             # expand
             conv.extend([
                 GroupedConv2d(in_channels, expand_channels, expand_ksize),
-                nn.BatchNorm2d(expand_channels),
+                mint.nn.BatchNorm2d(expand_channels),
                 self.activation()
             ])
 
         # depthwise
         conv.extend([
             MDConv(expand_channels, kernel_size, stride),
-            nn.BatchNorm2d(expand_channels),
+            mint.nn.BatchNorm2d(expand_channels),
             self.activation()
         ])
 
@@ -212,7 +211,7 @@ class MixNetBlock(nn.Cell):
         # projection phase
         conv.extend([
             GroupedConv2d(expand_channels, out_channels, project_ksize),
-            nn.BatchNorm2d(out_channels)
+            mint.nn.BatchNorm2d(out_channels)
         ])
 
         self.convs = nn.SequentialCell(conv)
@@ -312,8 +311,8 @@ class MixNet(nn.Cell):
         # stem convolution
         self.stem_conv = nn.SequentialCell([
             nn.Conv2d(in_channels, stem_channels, 3, stride=2, pad_mode="pad", padding=1),
-            nn.BatchNorm2d(stem_channels),
-            nn.ReLU()
+            mint.nn.BatchNorm2d(stem_channels),
+            mint.nn.ReLU()
         ])
 
         # building MixNet blocks
@@ -335,13 +334,13 @@ class MixNet(nn.Cell):
         # head
         self.head_conv = nn.SequentialCell([
             nn.Conv2d(block_configs[-1][1], feature_size, 1, pad_mode="pad", padding=0),
-            nn.BatchNorm2d(feature_size),
-            nn.ReLU()
+            mint.nn.BatchNorm2d(feature_size),
+            mint.nn.ReLU()
         ])
 
         self.pool = GlobalAvgPooling()
         self.dropout = Dropout(p=drop_rate)
-        self.classifier = nn.Dense(feature_size, num_classes)
+        self.classifier = mint.nn.Linear(feature_size, num_classes)
 
         self._initialize_weights()
 
@@ -356,10 +355,10 @@ class MixNet(nn.Cell):
                 if cell.bias is not None:
                     cell.bias.set_data(
                         init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
-                cell.gamma.set_data(init.initializer("ones", cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer("zeros", cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
+                cell.weight.set_data(init.initializer("ones", cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(
                     init.initializer(init.Uniform(1.0 / math.sqrt(cell.weight.shape[0])),
                                      cell.weight.shape, cell.weight.dtype))
