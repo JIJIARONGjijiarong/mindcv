@@ -7,13 +7,12 @@ from typing import Union
 import mindspore
 import mindspore.common.initializer as init
 import mindspore.nn as nn
-import mindspore.ops as ops
 import mindspore.mint as mint
 from mindspore import Tensor
 from mindspore.numpy import split
 
 from .helpers import load_pretrained
-from .layers.compatibility import Dropout, Interpolate
+from .layers.compatibility import Interpolate
 from .layers.drop_path import DropPath
 from .layers.identity import Identity
 from .layers.extend_bmm import ExtendBatchMatMul
