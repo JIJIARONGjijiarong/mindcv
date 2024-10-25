@@ -7,7 +7,7 @@ from typing import Any, Callable, List, Optional, Sequence, Union
 
 import numpy as np
 
-from mindspore import Tensor, nn
+from mindspore import Tensor, nn, mint
 from mindspore.common import initializer as weight_init
 from mindspore.common.initializer import Normal, Uniform
 
@@ -312,9 +312,9 @@ class EfficientNet(nn.Cell):
         self.last_channel = None
 
         if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
+            norm_layer = mint.nn.BatchNorm2d
             if width_mult >= 1.6:
-                norm_layer = partial(nn.BatchNorm2d, eps=0.001, momentum=0.99)
+                norm_layer = partial(mint.nn.BatchNorm2d, eps=0.001, momentum=0.99)
 
         layers: List[nn.Cell] = []
 
@@ -438,7 +438,7 @@ class EfficientNet(nn.Cell):
         self.features = nn.SequentialCell(layers)
         self.avgpool = GlobalAvgPooling()
         self.dropout = Dropout(p=dropout_rate)
-        self.mlp_head = nn.Dense(lastconv_output_channels, num_classes)
+        self.mlp_head = mint.nn.Linear(lastconv_output_channels, num_classes)
         self._initialize_weights()
 
     def forward_features(self, x: Tensor) -> Tensor:
@@ -461,7 +461,7 @@ class EfficientNet(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Dense):
+            if isinstance(cell, mint.nn.Linear):
                 init_range = 1.0 / np.sqrt(cell.weight.shape[0])
                 cell.weight.set_data(weight_init.initializer(Uniform(init_range), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:

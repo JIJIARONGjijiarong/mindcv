@@ -25,6 +25,7 @@ class Swish(nn.Cell):
     def __init__(self):
         super().__init__()
         self.result = None
+        # TODO: 已收录，不支持
         self.sigmoid = nn.Sigmoid()
 
     def construct(self, x):
