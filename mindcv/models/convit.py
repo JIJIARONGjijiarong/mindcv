@@ -296,8 +296,8 @@ class ConViT(nn.Cell):
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
             elif isinstance(cell, mint.nn.LayerNorm):
-                cell.weight.set_data(init.initializer(init.Constant(1), cell.gamma.shape))
-                cell.bias.set_data(init.initializer(init.Constant(0), cell.beta.shape))
+                cell.weight.set_data(init.initializer(init.Constant(1), cell.weight.shape))
+                cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
         # local init
         for i in range(self.local_up_to_layer):
             self.blocks[i].attn.v.weight.set_data(mint.eye(self.embed_dim, self.embed_dim, dtype=ms.float32),
@@ -323,8 +323,8 @@ class ConViT(nn.Cell):
         cls_tokens = mint.tile(self.cls_token, (x.shape[0], 1, 1))
         for u, blk in enumerate(self.blocks):
             if u == self.local_up_to_layer:
-                # TODO: ops.Cast 已收录，不支持 尝试to
-                x = x.to(cls_tokens.dtype)
+                # TODO: ops.Cast 已收录，已支持，无需修改
+                x = ops.Cast()(x, cls_tokens.dtype)
                 x = mint.concat((cls_tokens, x), dim=1)
             x = blk(x)
         x = self.norm(x)
