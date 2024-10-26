@@ -6,7 +6,7 @@ Refer to MnasNet: Platform-Aware Neural Architecture Search for Mobile.
 from typing import List
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained, make_divisible
 from .layers.compatibility import Dropout
@@ -60,16 +60,16 @@ class InvertedResidual(nn.Cell):
         self.layers = nn.SequentialCell([
             # pw
             nn.Conv2d(in_channels, hidden_dim, kernel_size=1, stride=1),
-            nn.BatchNorm2d(hidden_dim, momentum=0.99, eps=1e-3),
-            nn.ReLU(),
+            mint.nn.BatchNorm2d(hidden_dim, momentum=0.99, eps=1e-3),
+            mint.nn.ReLU(),
             # dw
             nn.Conv2d(hidden_dim, hidden_dim, kernel_size=kernel_size, stride=stride, pad_mode="pad",
                       padding=kernel_size // 2, group=hidden_dim),
-            nn.BatchNorm2d(hidden_dim, momentum=0.99, eps=1e-3),
-            nn.ReLU(),
+            mint.nn.BatchNorm2d(hidden_dim, momentum=0.99, eps=1e-3),
+            mint.nn.ReLU(),
             # pw-linear
             nn.Conv2d(hidden_dim, out_channels, kernel_size=1, stride=1),
-            nn.BatchNorm2d(out_channels, momentum=0.99, eps=1e-3),
+            mint.nn.BatchNorm2d(out_channels, momentum=0.99, eps=1e-3),
         ])
 
     def construct(self, x: Tensor) -> Tensor:
@@ -113,14 +113,14 @@ class Mnasnet(nn.Cell):
 
         features: List[nn.Cell] = [
             nn.Conv2d(in_channels, mid_channels, kernel_size=3, stride=2, pad_mode="pad", padding=1),
-            nn.BatchNorm2d(mid_channels, momentum=0.99, eps=1e-3),
-            nn.ReLU(),
+            mint.nn.BatchNorm2d(mid_channels, momentum=0.99, eps=1e-3),
+            mint.nn.ReLU(),
             nn.Conv2d(mid_channels, mid_channels, kernel_size=3, stride=1, pad_mode="pad", padding=1,
                       group=mid_channels),
-            nn.BatchNorm2d(mid_channels, momentum=0.99, eps=1e-3),
-            nn.ReLU(),
+            mint.nn.BatchNorm2d(mid_channels, momentum=0.99, eps=1e-3),
+            mint.nn.ReLU(),
             nn.Conv2d(mid_channels, input_channels, kernel_size=1, stride=1),
-            nn.BatchNorm2d(input_channels, momentum=0.99, eps=1e-3),
+            mint.nn.BatchNorm2d(input_channels, momentum=0.99, eps=1e-3),
         ]
 
         for t, c, n, s, k in inverted_residual_setting:
@@ -133,13 +133,13 @@ class Mnasnet(nn.Cell):
 
         features.extend([
             nn.Conv2d(input_channels, 1280, kernel_size=1, stride=1),
-            nn.BatchNorm2d(1280, momentum=0.99, eps=1e-3),
-            nn.ReLU(),
+            mint.nn.BatchNorm2d(1280, momentum=0.99, eps=1e-3),
+            mint.nn.ReLU(),
         ])
         self.features = nn.SequentialCell(features)
         self.pool = GlobalAvgPooling()
         self.dropout = Dropout(p=drop_rate)
-        self.classifier = nn.Dense(1280, num_classes)
+        self.classifier = mint.nn.Linear(1280, num_classes)
         self._initialize_weights()
 
     def _initialize_weights(self) -> None:
@@ -151,10 +151,10 @@ class Mnasnet(nn.Cell):
                                      cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
-                cell.gamma.set_data(init.initializer("ones", cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer("zeros", cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
+                cell.weight.set_data(init.initializer("ones", cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(
                     init.initializer(init.HeUniform(mode="fan_out", nonlinearity="sigmoid"),
                                      cell.weight.shape, cell.weight.dtype))
