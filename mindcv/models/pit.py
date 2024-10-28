@@ -11,11 +11,12 @@ import numpy as np
 import mindspore.common.initializer as init
 from mindspore import Parameter, Tensor
 from mindspore import dtype as mstype
-from mindspore import nn, ops
+from mindspore import nn, mint
 
 from .helpers import load_pretrained
 from .layers import DropPath, Identity
 from .layers.compatibility import Dropout
+from .layers.extend_bmm import ExtendBatchMatMul
 from .registry import register_model
 
 __all__ = [
@@ -98,7 +99,7 @@ class conv_head_pooling(nn.Cell):
             group=in_feature,
             has_bias=True,
         )
-        self.fc = nn.Dense(in_channels=in_feature, out_channels=out_feature, has_bias=True)
+        self.fc = mint.nn.Linear(in_features=in_feature, out_features=out_feature, bias=True)
 
     def construct(self, x, cls_token):
         x = self.conv(x)
@@ -123,31 +124,31 @@ class Attention(nn.Cell):
         head_dim = dim // num_heads
         self.scale = head_dim**-0.5
         # get pair-wise relative position index for each token inside the window
-        self.q = nn.Dense(in_channels=dim, out_channels=dim, has_bias=qkv_bias)
-        self.k = nn.Dense(in_channels=dim, out_channels=dim, has_bias=qkv_bias)
-        self.v = nn.Dense(in_channels=dim, out_channels=dim, has_bias=qkv_bias)
+        self.q = mint.nn.Linear(in_features=dim, out_features=dim, bias=qkv_bias)
+        self.k = mint.nn.Linear(in_features=dim, out_features=dim, bias=qkv_bias)
+        self.v = mint.nn.Linear(in_features=dim, out_features=dim, bias=qkv_bias)
         self.attn_drop = Dropout(p=attn_drop)
-        self.proj = nn.Dense(dim, dim)
+        self.proj = mint.nn.Linear(dim, dim)
         self.proj_drop = Dropout(p=proj_drop)
-        self.softmax = nn.Softmax(axis=-1)
+        self.softmax = mint.nn.Softmax(dim=-1)
 
-        self.batchmatmul = ops.BatchMatMul()
+        self.batchmatmul = ExtendBatchMatMul()
 
     def construct(self, x):
         B, N, C = x.shape
-        q = ops.reshape(self.q(x), (B, N, self.num_heads, C // self.num_heads)) * self.scale
-        q = ops.transpose(q, (0, 2, 1, 3))
-        k = ops.reshape(self.k(x), (B, N, self.num_heads, C // self.num_heads))
-        k = ops.transpose(k, (0, 2, 3, 1))
-        v = ops.reshape(self.v(x), (B, N, self.num_heads, C // self.num_heads))
-        v = ops.transpose(v, (0, 2, 1, 3))
+        q = mint.reshape(self.q(x), (B, N, self.num_heads, C // self.num_heads)) * self.scale
+        q = mint.permute(q, (0, 2, 1, 3))
+        k = mint.reshape(self.k(x), (B, N, self.num_heads, C // self.num_heads))
+        k = mint.permute(k, (0, 2, 3, 1))
+        v = mint.reshape(self.v(x), (B, N, self.num_heads, C // self.num_heads))
+        v = mint.permute(v, (0, 2, 1, 3))
 
         attn = self.batchmatmul(q, k)
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
         x = self.batchmatmul(attn, v)
-        x = ops.reshape(ops.transpose(x, (0, 2, 1, 3)), (B, N, C))
+        x = mint.reshape(mint.permute(x, (0, 2, 1, 3)), (B, N, C))
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
@@ -165,8 +166,8 @@ class Block(nn.Cell):
         drop: float = 0.0,
         attn_drop: float = 0.0,
         drop_path: float = 0.0,
-        act_layer: nn.cell = nn.GELU,
-        norm_layer: nn.cell = nn.LayerNorm,
+        act_layer: nn.cell = mint.nn.GELU,
+        norm_layer: nn.cell = mint.nn.LayerNorm,
     ) -> None:
         super().__init__()
         self.norm1 = norm_layer((dim,), epsilon=1e-6)
@@ -190,15 +191,15 @@ class Mlp(nn.Cell):
         in_features: int,
         hidden_features: int = None,
         out_features: int = None,
-        act_layer: nn.cell = nn.GELU,
+        act_layer: nn.cell = mint.nn.GELU,
         drop: float = 0.0,
     ) -> None:
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1 = nn.Dense(in_channels=in_features, out_channels=hidden_features, has_bias=True)
+        self.fc1 = mint.nn.Linear(in_features=in_features, out_features=hidden_features, bias=True)
         self.act = act_layer()
-        self.fc2 = nn.Dense(in_channels=hidden_features, out_channels=out_features, has_bias=True)
+        self.fc2 = mint.nn.Linear(in_features=hidden_features, out_features=out_features, bias=True)
         self.drop = Dropout(p=drop)
 
     def construct(self, x):
@@ -240,7 +241,7 @@ class Transformer(nn.Cell):
                     drop=drop_rate,
                     attn_drop=attn_drop_rate,
                     drop_path=drop_path_prob[i],
-                    norm_layer=nn.LayerNorm,
+                    norm_layer=mint.nn.LayerNorm,
                 )
                 for i in range(depth)
             ]
@@ -248,17 +249,17 @@ class Transformer(nn.Cell):
 
     def construct(self, x, cls_tokens):
         h, w = x.shape[2:4]
-        x = ops.reshape(x, (x.shape[0], x.shape[1], h * w))
-        x = ops.transpose(x, (0, 2, 1))
+        x = mint.reshape(x, (x.shape[0], x.shape[1], h * w))
+        x = mint.permute(x, (0, 2, 1))
         token_length = cls_tokens.shape[1]
-        x = ops.concat((cls_tokens, x), axis=1)
+        x = mint.concat((cls_tokens, x), dim=1)
         for blk in self.blocks:
             x = blk(x)
 
         cls_tokens = x[:, :token_length]
         x = x[:, token_length:]
-        x = ops.transpose(x, (0, 2, 1))
-        x = ops.reshape(x, (x.shape[0], x.shape[1], h, w))
+        x = mint.permute(x, (0, 2, 1))
+        x = mint.reshape(x, (x.shape[0], x.shape[1], h, w))
         return x, cls_tokens
 
 
@@ -309,12 +310,13 @@ class PoolingTransformer(nn.Cell):
         self.num_classes = num_classes
 
         self.patch_size = patch_size
+        # TODO: mint np to tensor 接口
         self.pos_embed = Parameter(Tensor(np.random.randn(1, base_dims[0] * heads[0], width, width), mstype.float32))
         self.patch_embed = conv_embedding(in_chans, base_dims[0] * heads[0], patch_size, stride, padding)
+        # TODO: mint np to tensor 接口
         self.cls_token = Parameter(Tensor(np.random.randn(1, 1, base_dims[0] * heads[0]), mstype.float32))
 
         self.pos_drop = Dropout(p=drop_rate)
-        self.tile = ops.Tile()
 
         self.transformers = nn.CellList([])
         self.pools = nn.CellList([])
@@ -334,13 +336,13 @@ class PoolingTransformer(nn.Cell):
                     )
                 )
 
-        self.norm = nn.LayerNorm((base_dims[-1] * heads[-1],), epsilon=1e-6)
+        self.norm = mint.nn.LayerNorm((base_dims[-1] * heads[-1],), eps=1e-6)
 
         self.embed_dim = base_dims[-1] * heads[-1]
 
         # Classifier head
         if num_classes > 0:
-            self.head = nn.Dense(in_channels=base_dims[-1] * heads[-1], out_channels=num_classes, has_bias=True)
+            self.head = mint.nn.Linear(in_features=base_dims[-1] * heads[-1], out_features=num_classes, bias=True)
         else:
             self.head = Identity()
 
@@ -355,9 +357,9 @@ class PoolingTransformer(nn.Cell):
     def _initialize_weights(self) -> None:
         """init_weights"""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.LayerNorm):
-                cell.gamma.set_data(init.initializer(init.One(), cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer(init.Zero(), cell.beta.shape, cell.beta.dtype))
+            if isinstance(cell, mint.nn.LayerNorm):
+                cell.weight.set_data(init.initializer(init.One(), cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
             if isinstance(cell, nn.Conv2d):
                 n = cell.kernel_size[0] * cell.kernel_size[1] * cell.in_channels
                 cell.weight.set_data(
@@ -367,7 +369,7 @@ class PoolingTransformer(nn.Cell):
                     cell.bias.set_data(
                         init.initializer(init.Uniform(math.sqrt(1.0 / n)), cell.bias.shape, cell.bias.dtype)
                     )
-            if isinstance(cell, nn.Dense):
+            if isinstance(cell, mint.nn.Linear):
                 init_range = 1.0 / np.sqrt(cell.weight.shape[0])
                 cell.weight.set_data(init.initializer(init.Uniform(init_range), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
@@ -379,7 +381,7 @@ class PoolingTransformer(nn.Cell):
         pos_embed = self.pos_embed
         x = self.pos_drop(x + pos_embed)
 
-        cls_tokens = self.tile(self.cls_token, (x.shape[0], 1, 1))
+        cls_tokens = mint.tile(self.cls_token, (x.shape[0], 1, 1))
 
         for stage in range(len(self.pools)):
             x, cls_tokens = self.transformers[stage](x, cls_tokens)
