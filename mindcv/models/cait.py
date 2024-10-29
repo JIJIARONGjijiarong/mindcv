@@ -9,6 +9,7 @@ import mindspore as ms
 import mindspore.common.initializer as init
 import mindspore.nn as nn
 import mindspore.ops as ops
+import mindspore.mint as mint
 from mindspore import Parameter, Tensor
 from mindspore.common.initializer import TruncatedNormal
 
@@ -17,6 +18,7 @@ from .layers.compatibility import Dropout
 from .layers.drop_path import DropPath
 from .layers.mlp import Mlp
 from .layers.patch_embed import PatchEmbed
+from .layers.extend_bmm import ExtendBatchMatMul
 from .registry import register_model
 
 __all__ = [
@@ -65,31 +67,32 @@ class ClassAttention(nn.Cell):
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim ** -0.5
 
-        self.q = nn.Dense(dim, dim, has_bias=qkv_bias)
-        self.k = nn.Dense(dim, dim, has_bias=qkv_bias)
-        self.v = nn.Dense(dim, dim, has_bias=qkv_bias)
+        self.q = mint.nn.Linear(dim, dim, bias=qkv_bias)
+        self.k = mint.nn.Linear(dim, dim, bias=qkv_bias)
+        self.v = mint.nn.Linear(dim, dim, bias=qkv_bias)
         self.attn_drop = Dropout(p=attn_drop_rate)
-        self.proj = nn.Dense(dim, dim)
+        self.proj = mint.nn.Linear(dim, dim)
         self.proj_drop = Dropout(p=proj_drop_rate)
-        self.softmax = nn.Softmax(axis=-1)
+        self.softmax = mint.nn.Softmax(dim=-1)
 
-        self.attn_matmul_v = ops.BatchMatMul()
-        self.q_matmul_k = ops.BatchMatMul(transpose_b=True)
+        self.attn_matmul_v = ExtendBatchMatMul()
+        self.q_matmul_k = ExtendBatchMatMul(transpose_b=True)
 
     def construct(self, x: Tensor) -> Tensor:
         B, N, C = x.shape
+        # TODO: ops.expand_dims 已收录，不支持
         q = ops.expand_dims(self.q(x[:, 0]), 1)
-        q = ops.reshape(q, (B, 1, self.num_heads, C // self.num_heads))
-        q = ops.transpose(q, (0, 2, 1, 3))
-        q = ops.mul(q, self.scale)
-        k = ops.transpose(ops.reshape(self.k(x), (B, N, self.num_heads, C // self.num_heads)), (0, 2, 1, 3))
-        v = ops.transpose(ops.reshape(self.v(x), (B, N, self.num_heads, C // self.num_heads)), (0, 2, 1, 3))
+        q = mint.reshape(q, (B, 1, self.num_heads, C // self.num_heads))
+        q = mint.permute(q, (0, 2, 1, 3))
+        q = mint.mul(q, self.scale)
+        k = mint.permute(mint.reshape(self.k(x), (B, N, self.num_heads, C // self.num_heads)), (0, 2, 1, 3))
+        v = mint.permute(mint.reshape(self.v(x), (B, N, self.num_heads, C // self.num_heads)), (0, 2, 1, 3))
 
         attn = self.q_matmul_k(q, k)
         attn = self.softmax(attn)
         attn = self.attn_drop(attn)
 
-        x_cls = ops.reshape(ops.transpose(self.attn_matmul_v(attn, v), (0, 2, 1, 3)), (B, 1, C))
+        x_cls = mint.reshape(mint.permute(self.attn_matmul_v(attn, v), (0, 2, 1, 3)), (B, 1, C))
         x_cls = self.proj(x_cls)
         x_cls = self.proj_drop(x_cls)
 
@@ -106,8 +109,8 @@ class LayerScaleBlockCA(nn.Cell):
                  drop_rate: float = 0.,
                  attn_drop_rate: float = 0.,
                  drop_path_rate: float = 0.,
-                 act_layer: nn.Cell = nn.GELU,
-                 norm_layer: nn.Cell = nn.LayerNorm,
+                 act_layer: nn.Cell = mint.nn.GELU,
+                 norm_layer: nn.Cell = mint.nn.LayerNorm,
                  init_values: float = 1e-4) -> None:
         super(LayerScaleBlockCA, self).__init__()
         self.norm1 = norm_layer((dim,))
@@ -118,6 +121,7 @@ class LayerScaleBlockCA(nn.Cell):
             qk_scale=qk_scale,
             attn_drop_rate=attn_drop_rate,
             proj_drop_rate=drop_rate)
+        # TODO: nn.Identity 已收录，不支持
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
 
         self.norm2 = norm_layer((dim,))
@@ -126,11 +130,11 @@ class LayerScaleBlockCA(nn.Cell):
                        drop=drop_rate,
                        act_layer=act_layer)
 
-        self.gamma_1 = Parameter(init_values * ops.ones((dim), ms.float32), requires_grad=True)
-        self.gamma_2 = Parameter(init_values * ops.ones((dim), ms.float32), requires_grad=True)
+        self.gamma_1 = Parameter(init_values * mint.ones((dim), dtype=ms.float32), requires_grad=True)
+        self.gamma_2 = Parameter(init_values * mint.ones((dim), dtype=ms.float32), requires_grad=True)
 
     def construct(self, x: Tensor, x_cls: Tensor) -> Tensor:
-        u = ops.concat((x_cls, x), axis=1)
+        u = mint.concat((x_cls, x), dim=1)
         x_cls = x_cls + self.drop_path(self.gamma_1 * self.attn(self.norm1(u)))
         x_cls = x_cls + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x_cls)))
 
@@ -156,43 +160,44 @@ class AttentionTalkingHead(nn.Cell):
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim ** -0.5
 
-        self.qkv = nn.Dense(dim, dim * 3, has_bias=qkv_bias)
+        self.qkv = mint.nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = Dropout(p=attn_drop_rate)
 
-        self.proj = nn.Dense(dim, dim, has_bias=False)
+        self.proj = mint.nn.Linear(dim, dim, bias=False)
 
-        self.proj_l = nn.Dense(num_heads, num_heads, has_bias=False)
-        self.proj_w = nn.Dense(num_heads, num_heads, has_bias=False)
+        self.proj_l = mint.nn.Linear(num_heads, num_heads, bias=False)
+        self.proj_w = mint.nn.Linear(num_heads, num_heads, bias=False)
 
         self.proj_drop = Dropout(p=proj_drop_rate)
 
-        self.softmax = nn.Softmax(axis=-1)
+        self.softmax = mint.nn.Softmax(dim=-1)
 
-        self.attn_matmul_v = ops.BatchMatMul()
-        self.q_matmul_k = ops.BatchMatMul(transpose_b=True)
+        self.attn_matmul_v = ExtendBatchMatMul()
+        self.q_matmul_k = ExtendBatchMatMul(transpose_b=True)
 
     def construct(self, x) -> Tensor:
         B, N, C = x.shape
-        qkv = ops.reshape(self.qkv(x), (B, N, 3, self.num_heads, C // self.num_heads))
-        qkv = ops.transpose(qkv, (2, 0, 3, 1, 4))
+        qkv = mint.reshape(self.qkv(x), (B, N, 3, self.num_heads, C // self.num_heads))
+        qkv = mint.permute(qkv, (2, 0, 3, 1, 4))
+        # TODO: ops.unstack 已收录，不支持
         q, k, v = ops.unstack(qkv, axis=0)
-        q = ops.mul(q, self.scale)
+        q = mint.mul(q, self.scale)
 
         attn = self.q_matmul_k(q, k)
 
-        attn = ops.transpose(attn, (0, 2, 3, 1))
+        attn = mint.permute(attn, (0, 2, 3, 1))
         attn = self.proj_l(attn)
-        attn = ops.transpose(attn, (0, 3, 1, 2))
+        attn = mint.permute(attn, (0, 3, 1, 2))
         attn = self.softmax(attn)
-        attn = ops.transpose(attn, (0, 2, 3, 1))
+        attn = mint.permute(attn, (0, 2, 3, 1))
         attn = self.proj_w(attn)
-        attn = ops.transpose(attn, (0, 3, 1, 2))
+        attn = mint.permute(attn, (0, 3, 1, 2))
 
         attn = self.attn_drop(attn)
 
         x = self.attn_matmul_v(attn, v)
-        x = ops.transpose(x, (0, 2, 1, 3))
-        x = ops.reshape(x, (B, N, C))
+        x = mint.permute(x, (0, 2, 1, 3))
+        x = mint.reshape(x, (B, N, C))
         x = self.proj(x)
         x = self.proj_drop(x)
 
@@ -209,8 +214,8 @@ class LayerScaleBlockSA(nn.Cell):
                  drop_rate: float = 0.,
                  attn_drop_rate: float = 0.,
                  drop_path_rate: float = 0.,
-                 act_layer: nn.Cell = nn.GELU,
-                 norm_layer: nn.Cell = nn.LayerNorm,
+                 act_layer: nn.Cell = mint.nn.GELU,
+                 norm_layer: nn.Cell = mint.nn.LayerNorm,
                  init_values: float = 1e-4) -> None:
         super(LayerScaleBlockSA, self).__init__()
 
@@ -229,8 +234,8 @@ class LayerScaleBlockSA(nn.Cell):
                        drop=drop_rate,
                        act_layer=act_layer)
 
-        self.gamma_1 = Parameter(init_values * ops.ones((dim), ms.float32), requires_grad=True)
-        self.gamma_2 = Parameter(init_values * ops.ones((dim), ms.float32), requires_grad=True)
+        self.gamma_1 = Parameter(init_values * mint.ones((dim), dtype=ms.float32), requires_grad=True)
+        self.gamma_2 = Parameter(init_values * mint.ones((dim), dtype=ms.float32), requires_grad=True)
 
     def construct(self, x: Tensor) -> Tensor:
         x = x + self.drop_path(self.gamma_1 * self.attn(self.norm1(x)))
@@ -253,8 +258,8 @@ class CaiT(nn.Cell):
                  drop_rate: float = 0.,
                  attn_drop_rate: float = 0.,
                  drop_path_rate: float = 0.,
-                 norm_layer: nn.Cell = nn.LayerNorm,
-                 act_layer: nn.Cell = nn.GELU,
+                 norm_layer: nn.Cell = mint.nn.LayerNorm,
+                 act_layer: nn.Cell = mint.nn.GELU,
                  init_values: float = 1e-4,
                  depth_token_only: int = 2,
                  mlp_ratio_clstk: float = 4.0) -> None:
@@ -310,7 +315,7 @@ class CaiT(nn.Cell):
 
         self.norm = norm_layer((embed_dim,))
 
-        self.head = nn.Dense(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = mint.nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
         self.pos_embed = init.initializer(TruncatedNormal(sigma=0.02), self.pos_embed.shape, ms.float32)
         self.cls_token = init.initializer(TruncatedNormal(sigma=0.02), self.cls_token.shape, ms.float32)
@@ -319,13 +324,13 @@ class CaiT(nn.Cell):
 
     def _initialize_weights(self) -> None:
         for name, m in self.cells_and_names():
-            if isinstance(m, nn.Dense):
+            if isinstance(m, mint.nn.Linear):
                 m.weight = init.initializer(TruncatedNormal(sigma=0.02), m.weight.shape, ms.float32)
                 if m.bias is not None:
                     m.bias.set_data(init.initializer(init.Constant(0), m.bias.shape))
-            elif isinstance(m, nn.LayerNorm):
-                m.beta.set_data(init.initializer(init.Constant(0), m.beta.shape))
-                m.gamma.set_data(init.initializer(init.Constant(1), m.gamma.shape))
+            elif isinstance(m, mint.nn.LayerNorm):
+                m.bias.set_data(init.initializer(init.Constant(0), m.bias.shape))
+                m.weight.set_data(init.initializer(init.Constant(1), m.weight.shape))
 
     def forward_features(self, x: Tensor) -> Tensor:
         B = x.shape[0]
@@ -341,7 +346,7 @@ class CaiT(nn.Cell):
         for i , blk in enumerate(self.blocks_token_only):
             cls_tokens = blk(x, cls_tokens)
 
-        x = ops.concat((cls_tokens, x), axis=1)
+        x = mint.concat((cls_tokens, x), dim=1)
 
         x = self.norm(x)
         return x[:, 0]
@@ -360,7 +365,7 @@ class CaiT(nn.Cell):
 def cait_xxs24_224(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> CaiT:
     model = CaiT(img_size=224, patch_size=16, in_channels=in_channels, num_classes=num_classes,
                  embed_dim=192, depth=24, num_heads=4, mlp_ratio=4, qkv_bias=False,
-                 norm_layer=partial(nn.LayerNorm, epsilon=1e-6), init_values=1e-5, depth_token_only=2,
+                 norm_layer=partial(mint.nn.LayerNorm, eps=1e-6), init_values=1e-5, depth_token_only=2,
                  **kwargs)
 
     if pretrained:
@@ -372,7 +377,7 @@ def cait_xxs24_224(pretrained: bool = False, num_classes: int = 1000, in_channel
 def cait_xs24_384(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> CaiT:
     model = CaiT(img_size=384, patch_size=16, in_channels=in_channels, num_classes=num_classes,
                  embed_dim=288, depth=24, num_heads=6, mlp_ratio=4, qkv_bias=False,
-                 norm_layer=partial(nn.LayerNorm, epsilon=1e-6), init_values=1e-5, depth_token_only=2,
+                 norm_layer=partial(mint.nn.LayerNorm, eps=1e-6), init_values=1e-5, depth_token_only=2,
                  **kwargs)
 
     if pretrained:
@@ -384,7 +389,7 @@ def cait_xs24_384(pretrained: bool = False, num_classes: int = 1000, in_channels
 def cait_s24_224(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> CaiT:
     model = CaiT(img_size=224, patch_size=16, in_channels=in_channels, num_classes=num_classes,
                  embed_dim=384, depth=24, num_heads=8, mlp_ratio=4, qkv_bias=False,
-                 norm_layer=partial(nn.LayerNorm, epsilon=1e-6), init_values=1e-5, depth_token_only=2,
+                 norm_layer=partial(mint.nn.LayerNorm, eps=1e-6), init_values=1e-5, depth_token_only=2,
                  **kwargs)
 
     if pretrained:
@@ -396,7 +401,7 @@ def cait_s24_224(pretrained: bool = False, num_classes: int = 1000, in_channels=
 def cait_s24_384(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> CaiT:
     model = CaiT(img_size=384, patch_size=16, in_channels=in_channels, num_classes=num_classes,
                  embed_dim=384, depth=24, num_heads=8, mlp_ratio=4, qkv_bias=False,
-                 norm_layer=partial(nn.LayerNorm, epsilon=1e-6), init_values=1e-5, depth_token_only=2,
+                 norm_layer=partial(mint.nn.LayerNorm, eps=1e-6), init_values=1e-5, depth_token_only=2,
                  **kwargs)
 
     if pretrained:
@@ -408,7 +413,7 @@ def cait_s24_384(pretrained: bool = False, num_classes: int = 1000, in_channels=
 def cait_s36_384(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> CaiT:
     model = CaiT(img_size=384, patch_size=16, in_channels=in_channels, num_classes=num_classes,
                  embed_dim=384, depth=36, num_heads=8, mlp_ratio=4, qkv_bias=False,
-                 norm_layer=partial(nn.LayerNorm, epsilon=1e-6), init_values=1e-6, depth_token_only=2,
+                 norm_layer=partial(mint.nn.LayerNorm, eps=1e-6), init_values=1e-6, depth_token_only=2,
                  **kwargs)
 
     if pretrained:
@@ -420,7 +425,7 @@ def cait_s36_384(pretrained: bool = False, num_classes: int = 1000, in_channels=
 def cait_m36_384(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> CaiT:
     model = CaiT(img_size=384, patch_size=16, in_channels=in_channels, num_classes=num_classes,
                  embed_dim=768, depth=36, num_heads=16, mlp_ratio=4, qkv_bias=False,
-                 norm_layer=partial(nn.LayerNorm, epsilon=1e-6), init_values=1e-6, depth_token_only=2,
+                 norm_layer=partial(mint.nn.LayerNorm, eps=1e-6), init_values=1e-6, depth_token_only=2,
                  **kwargs)
 
     if pretrained:
@@ -432,7 +437,7 @@ def cait_m36_384(pretrained: bool = False, num_classes: int = 1000, in_channels=
 def cait_m48_448(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> CaiT:
     model = CaiT(img_size=448, patch_size=16, in_channels=in_channels, num_classes=num_classes,
                  embed_dim=768, depth=48, num_heads=16, mlp_ratio=4, qkv_bias=False,
-                 norm_layer=partial(nn.LayerNorm, epsilon=1e-6), init_values=1e-6, depth_token_only=2,
+                 norm_layer=partial(mint.nn.LayerNorm, eps=1e-6), init_values=1e-6, depth_token_only=2,
                  **kwargs)
 
     if pretrained:

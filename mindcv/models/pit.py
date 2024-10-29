@@ -170,10 +170,10 @@ class Block(nn.Cell):
         norm_layer: nn.cell = mint.nn.LayerNorm,
     ) -> None:
         super().__init__()
-        self.norm1 = norm_layer((dim,), epsilon=1e-6)
+        self.norm1 = norm_layer((dim,), eps=1e-6)
         self.attn = Attention(dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else Identity()
-        self.norm2 = norm_layer((dim,), epsilon=1e-6)
+        self.norm2 = norm_layer((dim,), eps=1e-6)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
