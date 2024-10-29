@@ -5,6 +5,7 @@ Refer to MLP-Mixer: An all-MLP Architecture for Vision.
 
 import mindspore.nn as nn
 import mindspore.ops as ops
+import mindspore.mint as mint
 
 from .helpers import load_pretrained
 from .layers.compatibility import Dropout
@@ -49,10 +50,10 @@ class FeedForward(nn.Cell):
     def __init__(self, dim, hidden_dim, dropout=0.):
         super(FeedForward, self).__init__()
         self.net = nn.SequentialCell(
-            nn.Dense(dim, hidden_dim),
-            nn.GELU(),
+            mint.nn.Linear(dim, hidden_dim),
+            mint.nn.GELU(),
             Dropout(p=dropout),
-            nn.Dense(hidden_dim, dim),
+            mint.nn.Linear(hidden_dim, dim),
             Dropout(p=dropout)
         )
 
@@ -68,14 +69,13 @@ class TransPose(nn.Cell):
         self.permutation = permutation
         self.embedding = embedding
         if embedding:
-            self.reshape = ops.Reshape()
-        self.transpose = ops.Transpose()
+            self.reshape = mint.reshape
 
     def construct(self, x):
         if self.embedding:
             b, c, h, w = x.shape
             x = self.reshape(x, (b, c, h * w))
-        x = self.transpose(x, self.permutation)
+        x = mint.permute(x, self.permutation)
         return x
 
 
@@ -85,13 +85,13 @@ class MixerBlock(nn.Cell):
     def __init__(self, n_patches, n_channels, token_dim, channel_dim, dropout=0.):
         super().__init__()
         self.token_mix = nn.SequentialCell(
-            nn.LayerNorm((n_channels,)),
+            mint.nn.LayerNorm((n_channels,)),
             TransPose((0, 2, 1)),
             FeedForward(n_patches, token_dim, dropout),
             TransPose((0, 2, 1))
         )
         self.channel_mix = nn.SequentialCell(
-            nn.LayerNorm((n_channels,)),
+            mint.nn.LayerNorm((n_channels,)),
             FeedForward(n_channels, channel_dim, dropout),
         )
 
@@ -129,16 +129,15 @@ class MLPMixer(nn.Cell):
         self.mixer_blocks = nn.SequentialCell()
         for _ in range(depth):
             self.mixer_blocks.append(MixerBlock(n_patches, n_channels, token_dim, channel_dim))
-        self.layer_norm = nn.LayerNorm((n_channels,))
-        self.mlp_head = nn.Dense(n_channels, num_classes)
-        self.mean = ops.ReduceMean()
+        self.layer_norm = mint.nn.LayerNorm((n_channels,))
+        self.mlp_head = mint.nn.Linear(n_channels, num_classes)
         self._initialize_weights()
 
     def construct(self, x):
         x = self.to_patch_embedding(x)
         x = self.mixer_blocks(x)
         x = self.layer_norm(x)
-        x = self.mean(x, 1)
+        x = mint.mean(x, 1)
         return self.mlp_head(x)
 
     def _initialize_weights(self):
