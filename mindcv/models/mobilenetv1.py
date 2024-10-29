@@ -4,7 +4,7 @@ Refer to MobileNets: Efficient Convolutional Neural Networks for Mobile Vision A
 """
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained
 from .layers.pooling import GlobalAvgPooling
@@ -49,12 +49,12 @@ def depthwise_separable_conv(inp: int, oup: int, stride: int) -> nn.SequentialCe
     return nn.SequentialCell(
         # dw
         nn.Conv2d(inp, inp, 3, stride, pad_mode="pad", padding=1, group=inp, has_bias=False),
-        nn.BatchNorm2d(inp),
-        nn.ReLU(),
+        mint.nn.BatchNorm2d(inp),
+        mint.nn.ReLU(),
         # pw
         nn.Conv2d(inp, oup, 1, 1, pad_mode="pad", padding=0, has_bias=False),
-        nn.BatchNorm2d(oup),
-        nn.ReLU(),
+        mint.nn.BatchNorm2d(oup),
+        mint.nn.ReLU(),
     )
 
 
@@ -98,8 +98,8 @@ class MobileNetV1(nn.Cell):
 
         features = [
             nn.Conv2d(in_channels, input_channels, 3, 2, pad_mode="pad", padding=1, has_bias=False),
-            nn.BatchNorm2d(input_channels),
-            nn.ReLU(),
+            mint.nn.BatchNorm2d(input_channels),
+            mint.nn.ReLU(),
         ]
         for c, s in block_setting:
             output_channel = int(c * alpha)
@@ -108,7 +108,7 @@ class MobileNetV1(nn.Cell):
         self.features = nn.SequentialCell(features)
 
         self.pool = GlobalAvgPooling()
-        self.classifier = nn.Dense(input_channels, num_classes)
+        self.classifier = mint.nn.Linear(input_channels, num_classes)
         self._initialize_weights()
 
     def _initialize_weights(self) -> None:
@@ -116,7 +116,7 @@ class MobileNetV1(nn.Cell):
         for _, cell in self.cells_and_names():
             if isinstance(cell, nn.Conv2d):
                 cell.weight.set_data(init.initializer(init.XavierUniform(), cell.weight.shape, cell.weight.dtype))
-            if isinstance(cell, nn.Dense):
+            if isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(init.initializer(init.TruncatedNormal(), cell.weight.shape, cell.weight.dtype))
 
     def forward_features(self, x: Tensor) -> Tensor:
