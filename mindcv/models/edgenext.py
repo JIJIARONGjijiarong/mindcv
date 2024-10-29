@@ -53,8 +53,8 @@ default_cfgs = {
         input_size=(3, 256, 256)),
 }
 
-# TODO: nn.LayerNorm 需要修改为mint.nn.LayerNorm
-class LayerNorm(mint.nn.LayerNorm):
+
+class LayerNorm(nn.LayerNorm):
     r"""LayerNorm for channels_first tensors with 2d spatial dimensions (ie N, C, H, W)."""
 
     def __init__(
