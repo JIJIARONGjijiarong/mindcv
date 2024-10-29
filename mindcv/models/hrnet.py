@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import mindspore as ms
 import mindspore.nn as nn
 import mindspore.ops as ops
+import mindspore.mint as mint
 from mindspore import Tensor
 
 from .helpers import build_model_with_cfg
@@ -59,7 +60,7 @@ class BasicBlock(nn.Cell):
     ) -> None:
         super().__init__()
         if norm is None:
-            norm = nn.BatchNorm2d
+            norm = mint.nn.BatchNorm2d
         assert groups == 1, "BasicBlock only supports groups=1"
         assert base_width == 64, "BasicBlock only supports base_width=64"
 
@@ -72,7 +73,7 @@ class BasicBlock(nn.Cell):
             pad_mode="pad",
         )
         self.bn1 = norm(channels)
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.conv2 = nn.Conv2d(
             channels, channels, kernel_size=3, stride=1, padding=1, pad_mode="pad"
         )
@@ -115,7 +116,7 @@ class Bottleneck(nn.Cell):
     ) -> None:
         super().__init__()
         if norm is None:
-            norm = nn.BatchNorm2d
+            norm = mint.nn.BatchNorm2d
 
         width = int(channels * (base_width / 64.0)) * groups
 
@@ -135,7 +136,7 @@ class Bottleneck(nn.Cell):
             width, channels * self.expansion, kernel_size=1, stride=1
         )
         self.bn3 = norm(channels * self.expansion)
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.down_sample = down_sample
 
     def construct(self, x: Tensor) -> Tensor:
@@ -188,7 +189,7 @@ class HRModule(nn.Cell):
             num_branches, block, num_blocks, num_channels
         )
         self.fuse_layers = self._make_fuse_layers()
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
 
     @staticmethod
     def _check_branches(
@@ -231,7 +232,7 @@ class HRModule(nn.Cell):
                     kernel_size=1,
                     stride=stride,
                 ),
-                nn.BatchNorm2d(num_channels[branch_index] * block.expansion),
+                mint.nn.BatchNorm2d(num_channels[branch_index] * block.expansion),
             )
 
         layers = []
@@ -282,7 +283,7 @@ class HRModule(nn.Cell):
                             nn.Conv2d(
                                 num_inchannels[j], num_inchannels[i], kernel_size=1
                             ),
-                            nn.BatchNorm2d(num_inchannels[i]),
+                            mint.nn.BatchNorm2d(num_inchannels[i]),
                         )
                     )
                 elif j == i:
@@ -302,7 +303,7 @@ class HRModule(nn.Cell):
                                         padding=1,
                                         pad_mode="pad",
                                     ),
-                                    nn.BatchNorm2d(num_outchannels_conv3x3),
+                                    mint.nn.BatchNorm2d(num_outchannels_conv3x3),
                                 )
                             )
                         else:
@@ -317,8 +318,8 @@ class HRModule(nn.Cell):
                                         padding=1,
                                         pad_mode="pad",
                                     ),
-                                    nn.BatchNorm2d(num_outchannels_conv3x3),
-                                    nn.ReLU(),
+                                    mint.nn.BatchNorm2d(num_outchannels_conv3x3),
+                                    mint.nn.ReLU(),
                                 )
                             )
                     fuse_layer.append(nn.SequentialCell(conv3x3s))
@@ -345,6 +346,7 @@ class HRModule(nn.Cell):
                     _, _, height, width = x2[i].shape
                     t = self.fuse_layers[i][j](x2[j])
                     t = ops.cast(t, ms.float32)
+                    # TODO: ops.ResizeNearestNeighbor 已收录，不支持
                     t = ops.ResizeNearestNeighbor((height, width))(t)
                     t = ops.cast(t, ms.float16)
                     y = y + t
@@ -387,12 +389,12 @@ class HRNet(nn.Cell):
         self.conv1 = nn.Conv2d(
             in_channels, 64, kernel_size=3, stride=2, padding=1, pad_mode="pad"
         )
-        self.bn1 = nn.BatchNorm2d(64)
+        self.bn1 = mint.nn.BatchNorm2d(64)
         self.conv2 = nn.Conv2d(
             64, 64, kernel_size=3, stride=2, padding=1, pad_mode="pad"
         )
-        self.bn2 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU()
+        self.bn2 = mint.nn.BatchNorm2d(64)
+        self.relu = mint.nn.ReLU()
 
         # stage 1
         self.stage1_cfg = self.stage_cfg["stage1"]
@@ -450,7 +452,7 @@ class HRNet(nn.Cell):
         self.incre_modules, self.downsample_modules, self.final_layer = self._make_head(
             pre_stage_channels
         )
-        self.classifier = nn.Dense(2048, num_classes)
+        self.classifier = mint.nn.Linear(2048, num_classes)
 
     def _make_head(self, pre_stage_channels: List[int]):
         head_block = Bottleneck
@@ -481,8 +483,8 @@ class HRNet(nn.Cell):
                     pad_mode="pad",
                     padding=1,
                 ),
-                nn.BatchNorm2d(out_channels),
-                nn.ReLU(),
+                mint.nn.BatchNorm2d(out_channels),
+                mint.nn.ReLU(),
             )
 
             downsamp_modules.append(downsamp_module)
@@ -496,8 +498,8 @@ class HRNet(nn.Cell):
                 stride=1,
                 padding=0,
             ),
-            nn.BatchNorm2d(2048),
-            nn.ReLU(),
+            mint.nn.BatchNorm2d(2048),
+            mint.nn.ReLU(),
         )
 
         return incre_modules, downsamp_modules, final_layer
@@ -522,8 +524,8 @@ class HRNet(nn.Cell):
                                 padding=1,
                                 pad_mode="pad",
                             ),
-                            nn.BatchNorm2d(num_channels_cur_layer[i]),
-                            nn.ReLU(),
+                            mint.nn.BatchNorm2d(num_channels_cur_layer[i]),
+                            mint.nn.ReLU(),
                         )
                     )
                     transition_layers_flags.append(True)
@@ -550,8 +552,8 @@ class HRNet(nn.Cell):
                                     padding=1,
                                     pad_mode="pad",
                                 ),
-                                nn.BatchNorm2d(outchannels),
-                                nn.ReLU(),
+                                mint.nn.BatchNorm2d(outchannels),
+                                mint.nn.ReLU(),
                             ]
                         )
                     )
@@ -577,7 +579,7 @@ class HRNet(nn.Cell):
                     kernel_size=1,
                     stride=stride,
                 ),
-                nn.BatchNorm2d(out_channels * block.expansion),
+                mint.nn.BatchNorm2d(out_channels * block.expansion),
             )
 
         layers = []
