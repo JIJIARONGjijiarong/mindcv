@@ -109,13 +109,12 @@ class SelectAdaptivePool2d(nn.Cell):
         if pool_type == '':
             self.pool = Identity()
         elif pool_type == 'avg':
-            # TODO: ops.ReduceMean 已收录，不支持
-            self.pool = ops.ReduceMean(keep_dims=True)
+            self.pool = mint.mean
         else:
             assert False, 'Invalid pool type: %s' % pool_type
 
     def construct(self, inputs):
-        out = self.pool(inputs, (2, 3))
+        out = self.pool(inputs, (2, 3),keepdim=True)
         out = self.flatten(out)
         return out
 

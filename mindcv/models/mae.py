@@ -4,7 +4,7 @@ from typing import Callable, Optional
 import numpy as np
 
 import mindspore as ms
-from mindspore import Parameter, Tensor, nn, ops
+from mindspore import Parameter, Tensor, nn, ops, mint
 from mindspore.common.initializer import Normal, initializer
 
 from .helpers import load_pretrained
@@ -112,8 +112,8 @@ class MAEForPretrain(nn.Cell):
         attn_drop_rate: float = 0.,
         drop_path_rate: float = 0.,
         init_values: Optional[float] = None,
-        act_layer: nn.Cell = nn.GELU,
-        norm_layer: nn.Cell = nn.LayerNorm,
+        act_layer: nn.Cell = mint.nn.GELU,
+        norm_layer: nn.Cell = mint.nn.LayerNorm,
         mlp_layer: Callable = Mlp,
         norm_pix_loss: bool = True,
         mask_ratio: float = 0.75,
@@ -140,16 +140,18 @@ class MAEForPretrain(nn.Cell):
         encoder_pos_emb = Tensor(get_2d_sincos_pos_embed(
             embed_dim, int(self.num_patches ** 0.5), cls_token=True), ms.float32
         )
+        # TODO: ops.expand_dims 已收录，不支持
         encoder_pos_emb = ops.expand_dims(encoder_pos_emb, axis=0)
         self.pos_embed = Parameter(encoder_pos_emb, requires_grad=False)
         self.norm = norm_layer((embed_dim,))
 
-        self.decoder_embed = nn.Dense(embed_dim, decoder_embed_dim)
+        self.decoder_embed = mint.nn.Linear(embed_dim, decoder_embed_dim)
         self.mask_token = Parameter(initializer(Normal(sigma=0.02), (1, 1, decoder_embed_dim)))
 
         decoder_pos_emb = Tensor(get_2d_sincos_pos_embed(
             decoder_embed_dim, int(self.num_patches ** 0.5), cls_token=True), ms.float32
         )
+        # TODO: ops.expand_dims 已收录，不支持
         decoder_pos_emb = ops.expand_dims(decoder_pos_emb, axis=0)
         self.decoder_pos_embed = Parameter(decoder_pos_emb, requires_grad=False)
 
@@ -162,16 +164,14 @@ class MAEForPretrain(nn.Cell):
             ) for i in range(decoder_depth)
         ])
         self.decoder_norm = norm_layer((decoder_embed_dim,))
-        self.decoder_pred = nn.Dense(decoder_embed_dim, patch_size ** 2 * in_channels)
-
-        self.sort = ops.Sort()
+        self.decoder_pred = mint.nn.Linear(decoder_embed_dim, patch_size ** 2 * in_channels)
 
         self.norm_pix_loss = norm_pix_loss
         self._init_weights()
 
     def _init_weights(self):
         for name, cell in self.cells_and_names():
-            if isinstance(cell, nn.Dense):
+            if isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(
                     initializer("xavier_uniform", cell.weight.shape, cell.weight.dtype)
                 )
@@ -180,11 +180,11 @@ class MAEForPretrain(nn.Cell):
                         initializer('zeros', cell.bias.shape, cell.bias.dtype)
                     )
 
-            elif isinstance(cell, nn.LayerNorm):
-                cell.gamma.set_data(
+            elif isinstance(cell, mint.nn.LayerNorm):
+                cell.weight.set_data(
                     initializer('ones', cell.gamma.shape, cell.gamma.dtype)
                 )
-                cell.beta.set_data(
+                cell.bias.set_data(
                     initializer('zeros', cell.beta.shape, cell.beta.dtype)
                 )
             if name == "patch_embed.proj":
@@ -202,9 +202,9 @@ class MAEForPretrain(nn.Cell):
         assert H == W and H % p == 0
         h = w = H // p
 
-        x = ops.reshape(imgs, (N, 3, h, p, w, p))
-        x = ops.transpose(x, (0, 2, 4, 3, 5, 1))
-        x = ops.reshape(x, (N, h * w, p ** 2 * 3))
+        x = mint.reshape(imgs, (N, 3, h, p, w, p))
+        x = mint.permute(x, (0, 2, 4, 3, 5, 1))
+        x = mint.reshape(x, (N, h * w, p ** 2 * 3))
         return x
 
     def unpatchify(self, x):
@@ -217,19 +217,21 @@ class MAEForPretrain(nn.Cell):
         h = w = int(L ** 0.5)
         assert h * w == L
 
-        imgs = ops.reshape(x, (N, h, w, p, p, 3))
-        imgs = ops.transpose(imgs, (0, 5, 1, 3, 2, 4))
-        imgs = ops.reshape(imgs, (N, 3, h * p, w * p))
+        imgs = mint.reshape(x, (N, h, w, p, p, 3))
+        imgs = mint.permute(imgs, (0, 5, 1, 3, 2, 4))
+        imgs = mint.reshape(imgs, (N, 3, h * p, w * p))
         return imgs
 
     def apply_masking(self, x, mask):
         D = x.shape[2]
-        _, ids_shuffle = self.sort(mask.astype(ms.float32))
-        _, ids_restore = self.sort(ids_shuffle.astype(ms.float32))
+        _, ids_shuffle = ops.sort(mask.astype(ms.float32))
+        _, ids_restore = ops.sort(ids_shuffle.astype(ms.float32))
 
         ids_keep = ids_shuffle[:, :self.unmask_len]
+        # TODO: ops.expand_dims 已收录，不支持
+        # TODO: ops.broadcast_to 已收录，不支持
         ids_keep = ops.broadcast_to(ops.expand_dims(ids_keep, axis=-1), (-1, -1, D))
-        x_unmasked = ops.gather_elements(x, dim=1, index=ids_keep)
+        x_unmasked = mint.gather(x, dim=1, index=ids_keep)
 
         return x_unmasked, ids_restore
 
@@ -241,9 +243,11 @@ class MAEForPretrain(nn.Cell):
         x, ids_restore = self.apply_masking(x, mask)
 
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
+        # TODO: ops.expand_dims 已收录，不支持
+        # TODO: ops.broadcast_to 已收录，不支持
         cls_token = ops.broadcast_to(cls_token, (bsz, -1, -1))
         cls_token = cls_token.astype(x.dtype)
-        x = ops.concat((cls_token, x), axis=1)
+        x = mint.concat((cls_token, x), dim=1)
 
         for blk in self.blocks:
             x = blk(x)
@@ -256,13 +260,17 @@ class MAEForPretrain(nn.Cell):
         bsz, L, D = x.shape
 
         mask_len = self.num_patches + 1 - L
+        # TODO: ops.expand_dims 已收录，不支持
+        # TODO: ops.broadcast_to 已收录，不支持
         mask_tokens = ops.broadcast_to(self.mask_token, (bsz, mask_len, -1))
         mask_tokens = mask_tokens.astype(x.dtype)
 
-        x_ = ops.concat((x[:, 1:, :], mask_tokens), axis=1)
+        x_ = mint.concat((x[:, 1:, :], mask_tokens), dim=1)
+        # TODO: ops.expand_dims 已收录，不支持
+        # TODO: ops.broadcast_to 已收录，不支持
         ids_restore = ops.broadcast_to(ops.expand_dims(ids_restore, axis=-1), (-1, -1, D))
-        x_ = ops.gather_elements(x_, dim=1, index=ids_restore)
-        x = ops.concat((x[:, :1, :], x_), axis=1)
+        x_ = mint.gather(x_, dim=1, index=ids_restore)
+        x = mint.concat((x[:, :1, :], x_), dim=1)
 
         x = x + self.decoder_pos_embed
 
@@ -290,7 +298,7 @@ class MAEForPretrain(nn.Cell):
 
     def construct(self, imgs, mask):
         bsz = imgs.shape[0]
-        mask = ops.reshape(mask, (bsz, -1))
+        mask = mint.reshape(mask, (bsz, -1))
         features, ids_restore = self.forward_features(imgs, mask)
         pred = self.forward_decoder(features, ids_restore)
         loss = self.forward_loss(imgs, pred, mask)
@@ -308,8 +316,8 @@ def mae_b_16_224_pretrain(pretrained: bool = False, num_classes: int = 1000, in_
     default_cfg = default_cfgs["mae_b_16_224_pretrain"]
     model = MAEForPretrain(
         image_size=224, patch_size=16, in_channels=in_channels, embed_dim=768, depth=12, num_heads=12,
-        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16, act_layer=partial(nn.GELU, approximate=False),
-        norm_layer=partial(nn.LayerNorm, epsilon=1e-6), **kwargs
+        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16, act_layer=partial(mint.nn.GELU, approximate=False),
+        norm_layer=partial(mint.nn.LayerNorm, epsilon=1e-6), **kwargs
     )
     if pretrained:
         load_pretrained(model, default_cfg, num_classes=num_classes, in_channels=in_channels)
@@ -321,8 +329,8 @@ def mae_l_16_224_pretrain(pretrained: bool = False, num_classes: int = 1000, in_
     default_cfg = default_cfgs["mae_l_16_224_pretrain"]
     model = MAEForPretrain(
         image_size=224, patch_size=16, in_channels=in_channels, embed_dim=1024, depth=24, num_heads=16,
-        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16, act_layer=partial(nn.GELU, approximate=False),
-        norm_layer=partial(nn.LayerNorm, epsilon=1e-6), **kwargs
+        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16, act_layer=partial(mint.nn.GELU, approximate=False),
+        norm_layer=partial(mint.nn.LayerNorm, epsilon=1e-6), **kwargs
     )
     if pretrained:
         load_pretrained(model, default_cfg, num_classes=num_classes, in_channels=in_channels)
@@ -334,8 +342,8 @@ def mae_h_16_224_pretrain(pretrained: bool = False, num_classes: int = 1000, in_
     default_cfg = default_cfgs["mae_h_16_224_pretrain"]
     model = MAEForPretrain(
         image_size=224, patch_size=16, in_channels=in_channels, embed_dim=1280, depth=32, num_heads=16,
-        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16, act_layer=partial(nn.GELU, approximate=False),
-        norm_layer=partial(nn.LayerNorm, epsilon=1e-6), **kwargs
+        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16, act_layer=partial(mint.nn.GELU, approximate=False),
+        norm_layer=partial(mint.nn.LayerNorm, epsilon=1e-6), **kwargs
     )
     if pretrained:
         load_pretrained(model, default_cfg, num_classes=num_classes, in_channels=in_channels)
@@ -347,7 +355,7 @@ def mae_b_16_224_finetune(pretrained: bool = False, num_classes: int = 1000, in_
     default_cfg = default_cfgs["mae_b_16_224_finetune"]
     model = VisionTransformer(
         image_size=224, patch_size=16, in_channels=in_channels, embed_dim=768, depth=12, num_heads=12,
-        global_pool='avg', norm_layer=partial(nn.LayerNorm, epsilon=1e-6),
+        global_pool='avg', norm_layer=partial(mint.nn.LayerNorm, epsilon=1e-6),
         num_classes=num_classes, **kwargs
     )
     if pretrained:
@@ -360,7 +368,7 @@ def mae_l_16_224_finetune(pretrained: bool = False, num_classes: int = 1000, in_
     default_cfg = default_cfgs["mae_l_16_224_finetune"]
     model = VisionTransformer(
         image_size=224, patch_size=16, in_channels=in_channels, embed_dim=1024, depth=24, num_heads=16,
-        global_pool='avg', norm_layer=partial(nn.LayerNorm, epsilon=1e-6),
+        global_pool='avg', norm_layer=partial(mint.nn.LayerNorm, epsilon=1e-6),
         num_classes=num_classes, **kwargs
     )
     if pretrained:
@@ -373,7 +381,7 @@ def mae_h_14_224_finetune(pretrained: bool = False, num_classes: int = 1000, in_
     default_cfg = default_cfgs["mae_h_14_224_finetune"]
     model = VisionTransformer(
         image_size=224, patch_size=14, in_channels=in_channels, embed_dim=1280, depth=32, num_heads=16,
-        global_pool='avg', norm_layer=partial(nn.LayerNorm, epsilon=1e-6),
+        global_pool='avg', norm_layer=partial(mint.nn.LayerNorm, epsilon=1e-6),
         num_classes=num_classes, **kwargs
     )
     if pretrained:
