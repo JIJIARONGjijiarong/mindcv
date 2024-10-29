@@ -8,7 +8,7 @@ from collections import OrderedDict
 from typing import Tuple
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained
 from .layers.pooling import GlobalAvgPooling
@@ -55,15 +55,15 @@ class BottleBlock(nn.Cell):
         key_stride: int,
     ):
         super().__init__()
-        self.bn1 = nn.BatchNorm2d(in_channel, eps=1e-3, momentum=0.9)
+        self.bn1 = mint.nn.BatchNorm2d(in_channel, eps=1e-3, momentum=0.9)
         self.conv1 = nn.Conv2d(in_channel, num_1x1_a, 1, stride=1)
-        self.bn2 = nn.BatchNorm2d(num_1x1_a, eps=1e-3, momentum=0.9)
+        self.bn2 = mint.nn.BatchNorm2d(num_1x1_a, eps=1e-3, momentum=0.9)
         self.conv2 = nn.Conv2d(num_1x1_a, num_3x3_b, 3, key_stride, pad_mode="pad", padding=1, group=g)
-        self.bn3 = nn.BatchNorm2d(num_3x3_b, eps=1e-3, momentum=0.9)
+        self.bn3 = mint.nn.BatchNorm2d(num_3x3_b, eps=1e-3, momentum=0.9)
         self.conv3_r = nn.Conv2d(num_3x3_b, num_1x1_c, 1, stride=1)
         self.conv3_d = nn.Conv2d(num_3x3_b, inc, 1, stride=1)
 
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
 
     def construct(self, x: Tensor):
         x = self.bn1(x)
@@ -107,8 +107,8 @@ class DualPathBlock(nn.Cell):
         self.cat_input = cat_input
 
         if self.has_proj:
-            self.c1x1_w_bn = nn.BatchNorm2d(in_channel, eps=1e-3, momentum=0.9)
-            self.c1x1_w_relu = nn.ReLU()
+            self.c1x1_w_bn = mint.nn.BatchNorm2d(in_channel, eps=1e-3, momentum=0.9)
+            self.c1x1_w_relu = mint.nn.ReLU()
             self.c1x1_w_r = nn.Conv2d(in_channel, num_1x1_c, kernel_size=1, stride=key_stride,
                                       pad_mode="pad", padding=0)
             self.c1x1_w_d = nn.Conv2d(in_channel, 2 * inc, kernel_size=1, stride=key_stride,
@@ -118,7 +118,7 @@ class DualPathBlock(nn.Cell):
 
     def construct(self, x: Tensor):
         if self.cat_input:
-            data_in = ops.concat(x, axis=1)
+            data_in = mint.concat(x, dim=1)
         else:
             data_in = x
 
@@ -132,8 +132,8 @@ class DualPathBlock(nn.Cell):
             data_o2 = x[1]
 
         out = self.layers(data_in)
-        summ = ops.add(data_o1, out[0])
-        dense = ops.concat((data_o2, out[1]), axis=1)
+        summ = mint.add(data_o1, out[0])
+        dense = mint.concat((data_o2, out[1]), dim=1)
         return (summ, dense)
 
 
@@ -167,9 +167,10 @@ class DPN(nn.Cell):
         # conv1
         blocks["conv1"] = nn.SequentialCell(OrderedDict([
             ("conv", nn.Conv2d(in_channels, num_init_channel, kernel_size=7, stride=2, pad_mode="pad", padding=3)),
-            ("norm", nn.BatchNorm2d(num_init_channel, eps=1e-3, momentum=0.9)),
-            ("relu", nn.ReLU()),
-            ("maxpool", nn.MaxPool2d(kernel_size=3, stride=2, pad_mode="same")),
+            ("norm", mint.nn.BatchNorm2d(num_init_channel, eps=1e-3, momentum=0.9)),
+            ("relu", mint.nn.ReLU()),
+            # TODO: check padding
+            ("maxpool", mint.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
         ]))
 
         # conv2
@@ -214,11 +215,11 @@ class DPN(nn.Cell):
 
         self.features = nn.SequentialCell(blocks)
         self.conv5_x = nn.SequentialCell(OrderedDict([
-            ("norm", nn.BatchNorm2d(in_channel, eps=1e-3, momentum=0.9)),
-            ("relu", nn.ReLU()),
+            ("norm", mint.nn.BatchNorm2d(in_channel, eps=1e-3, momentum=0.9)),
+            ("relu", mint.nn.ReLU()),
         ]))
         self.avgpool = GlobalAvgPooling()
-        self.classifier = nn.Dense(in_channel, num_classes)
+        self.classifier = mint.nn.Linear(in_channel, num_classes)
         self._initialize_weights()
 
     def _initialize_weights(self) -> None:
@@ -232,10 +233,10 @@ class DPN(nn.Cell):
                     cell.bias.set_data(
                         init.initializer(init.HeUniform(math.sqrt(5), mode="fan_in", nonlinearity="leaky_relu"),
                                          cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
-                cell.gamma.set_data(init.initializer("ones", cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer("zeros", cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
+                cell.weight.set_data(init.initializer("ones", cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(
                     init.initializer(init.HeUniform(math.sqrt(5), mode="fan_in", nonlinearity="leaky_relu"),
                                      cell.weight.shape, cell.weight.dtype))
@@ -244,7 +245,7 @@ class DPN(nn.Cell):
 
     def forward_feature(self, x: Tensor) -> Tensor:
         x = self.features(x)
-        x = ops.concat(x, axis=1)
+        x = mint.concat(x, dim=1)
         x = self.conv5_x(x)
         return x
 
