@@ -10,7 +10,7 @@ import numpy as np
 
 import mindspore
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, ops, mint
 
 from .helpers import load_pretrained
 from .layers import DropPath, Identity
@@ -64,14 +64,14 @@ class ConvMlp(nn.Cell):
     """MLP using 1x1 convs that keeps spatial dims"""
 
     def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        norm_layer=None,
-        bias=True,
-        drop=0.0,
+            self,
+            in_features,
+            hidden_features=None,
+            out_features=None,
+            act_layer=nn.GELU,
+            norm_layer=None,
+            bias=True,
+            drop=0.0,
     ):
         super().__init__()
         out_features = out_features or in_features
@@ -127,7 +127,7 @@ class PatchEmbed(nn.Cell):
 class Pooling(nn.Cell):
     def __init__(self, pool_size=3):
         super().__init__()
-        self.pool = nn.AvgPool2d(pool_size, stride=1, pad_mode="same")
+        self.pool = mint.nn.AvgPool2d(pool_size, stride=1, padding=pool_size // 2, count_include_pad=False)
 
     def construct(self, x):
         return self.pool(x) - x
@@ -161,6 +161,7 @@ class PoolFormerBlock(nn.Cell):
         else:
             self.layer_scale_1 = None
             self.layer_scale_2 = None
+        # TODO: ops.ExpandDims 已收录，不支持
         self.expand_dims = ops.ExpandDims()
 
     def construct(self, x):
@@ -284,14 +285,14 @@ class PoolFormer(nn.Cell):
 
         self.network = nn.SequentialCell(*network)
         self.norm = norm_layer(1, embed_dims[-1])
-        self.head = nn.Dense(embed_dims[-1], num_classes, has_bias=True) if num_classes > 0 else Identity()
+        self.head = mint.nn.Linear(embed_dims[-1], num_classes, has_bias=True) if num_classes > 0 else Identity()
         # self._initialize_weights()
         self.cls_init_weights()
 
     def cls_init_weights(self):
         """Initialize weights for cells."""
         for name, m in self.cells_and_names():
-            if isinstance(m, nn.Dense):
+            if isinstance(m, mint.nn.Linear):
                 m.weight.set_data(
                     init.initializer(init.TruncatedNormal(sigma=.02), m.weight.shape, m.weight.dtype))
                 if m.bias is not None:
@@ -302,7 +303,7 @@ class PoolFormer(nn.Cell):
         self.num_classes = num_classes
         if global_pool is not None:
             self.global_pool = global_pool
-        self.head = nn.Dense(self.num_features, num_classes) if num_classes > 0 else Identity()
+        self.head = mint.nn.Linear(self.num_features, num_classes) if num_classes > 0 else Identity()
 
     def forward_features(self, x: Tensor) -> Tensor:
         x = self.patch_embed(x)
