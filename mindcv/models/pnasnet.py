@@ -7,7 +7,7 @@ import math
 from collections import OrderedDict
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained
 from .layers import GlobalAvgPooling
@@ -49,8 +49,9 @@ class MaxPool(nn.Cell):
         super().__init__()
         self.pad = zero_pad
         if self.pad:
+            # TODO: nn.Pad 已收录，不支持
             self.zero_pad = nn.Pad(paddings=((0, 0), (0, 0), (1, 0), (1, 0)))
-        self.pool = nn.MaxPool2d(kernel_size=kernel_size, stride=stride, pad_mode="same")
+        self.pool = mint.nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=1)
 
     def construct(self, x: Tensor) -> Tensor:
         if self.pad:
@@ -110,19 +111,20 @@ class BranchSeparables(nn.Cell):
 
         self.pad = zero_pad
         if self.pad:
+            # TODO: nn.Pad 已收录，不支持
             self.zero_pad = nn.Pad(paddings=((0, 0), (0, 0), (1, 0), (1, 0)))
 
-        self.relu_1 = nn.ReLU()
+        self.relu_1 = mint.nn.ReLU()
         self.separable_1 = SeparableConv2d(in_channels, middle_channels,
                                            kernel_size, dw_stride=stride,
                                            dw_padding=padding)
-        self.bn_sep_1 = nn.BatchNorm2d(num_features=middle_channels, eps=0.001, momentum=0.9)
+        self.bn_sep_1 = mint.nn.BatchNorm2d(num_features=middle_channels, eps=0.001, momentum=0.9)
 
-        self.relu_2 = nn.ReLU()
+        self.relu_2 = mint.nn.ReLU()
         self.separable_2 = SeparableConv2d(middle_channels, out_channels,
                                            kernel_size, dw_stride=1,
                                            dw_padding=padding)
-        self.bn_sep_2 = nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9)
+        self.bn_sep_2 = mint.nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.relu_1(x)
@@ -151,11 +153,11 @@ class ReluConvBn(nn.Cell):
         stride: int = 1,
     ) -> None:
         super().__init__()
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
 
         self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
                               stride=stride, pad_mode="pad", has_bias=False)
-        self.bn = nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9)
+        self.bn = mint.nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.relu(x)
@@ -176,26 +178,27 @@ class FactorizedReduction(nn.Cell):
         out_channels: int,
     ) -> None:
         super().__init__()
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
 
         path_1 = OrderedDict([
-            ("avgpool", nn.AvgPool2d(kernel_size=1, stride=2, pad_mode="valid")),
+            ("avgpool", mint.nn.AvgPool2d(kernel_size=1, stride=2)),
             ("conv", nn.Conv2d(in_channels=in_channels, out_channels=out_channels // 2, kernel_size=1,
                                pad_mode="pad", has_bias=False)),
         ])
         self.path_1 = nn.SequentialCell(path_1)
 
         self.path_2 = nn.CellList([])
+        # TODO: nn.Pad 已收录，不支持
         self.path_2.append(nn.Pad(paddings=((0, 0), (0, 0), (0, 1), (0, 1)), mode="CONSTANT"))
         self.path_2.append(
-            nn.AvgPool2d(kernel_size=1, stride=2, pad_mode="valid")
+            mint.nn.AvgPool2d(kernel_size=1, stride=2)
         )
         self.path_2.append(
             nn.Conv2d(in_channels=in_channels, out_channels=out_channels // 2 + int(out_channels % 2),
                       kernel_size=1, stride=1, pad_mode="pad", has_bias=False)
         )
 
-        self.final_path_bn = nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9)
+        self.final_path_bn = mint.nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.relu(x)
@@ -206,7 +209,7 @@ class FactorizedReduction(nn.Cell):
         x_path2 = self.path_2[1](x_path2)
         x_path2 = self.path_2[2](x_path2)
 
-        out = self.final_path_bn(ops.concat((x_path1, x_path2), axis=1))
+        out = self.final_path_bn(mint.concat((x_path1, x_path2), dim=1))
         return out
 
 
@@ -242,7 +245,7 @@ class CellBase(nn.Cell):
             x_comb_iter_4_right = x_right
         x_comb_iter_4 = x_comb_iter_4_left + x_comb_iter_4_right
 
-        x_out = ops.concat((x_comb_iter_0, x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), axis=1)
+        x_out = mint.concat((x_comb_iter_0, x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), dim=1)
 
         return x_out
 
@@ -270,7 +273,7 @@ class CellStem0(CellBase):
             ("max_pool", MaxPool(3, stride=2)),
             ("conv", nn.Conv2d(in_channels_left, out_channels_left,
                                kernel_size=1, has_bias=False)),
-            ("bn", nn.BatchNorm2d(out_channels_left, eps=0.001, momentum=0.9))
+            ("bn", mint.nn.BatchNorm2d(out_channels_left, eps=0.001, momentum=0.9))
         ])
         self.comb_iter_0_right = nn.SequentialCell(comb_iter_0_right)
 
@@ -387,7 +390,7 @@ class Pnasnet(nn.Cell):
         self.conv_0 = nn.SequentialCell(OrderedDict([
             ("conv", nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=3, stride=2,
                                pad_mode="pad", has_bias=False)),
-            ("bn", nn.BatchNorm2d(num_features=32, eps=0.001, momentum=0.9))
+            ("bn", mint.nn.BatchNorm2d(num_features=32, eps=0.001, momentum=0.9))
         ]))
 
         self.cell_stem_0 = CellStem0(in_channels_left=32, out_channels_left=13,
@@ -423,10 +426,10 @@ class Pnasnet(nn.Cell):
         self.cell_8 = Cell(in_channels_left=1080, out_channels_left=216,
                            in_channels_right=1080, out_channels_right=216)
 
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.pool = GlobalAvgPooling()
         self.dropout = Dropout(p=0.5)
-        self.last_linear = nn.Dense(in_channels=1080, out_channels=num_classes)
+        self.last_linear = mint.nn.Linear(in_features=1080, out_features=num_classes)
 
         self._initialize_weights()
 
@@ -441,10 +444,10 @@ class Pnasnet(nn.Cell):
                 )
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
-                cell.gamma.set_data(init.initializer(init.One(), cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer(init.Zero(), cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
+                cell.weight.set_data(init.initializer(init.One(), cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(init.initializer(init.Normal(0.01, 0), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
