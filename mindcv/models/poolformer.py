@@ -285,7 +285,7 @@ class PoolFormer(nn.Cell):
 
         self.network = nn.SequentialCell(*network)
         self.norm = norm_layer(1, embed_dims[-1])
-        self.head = mint.nn.Linear(embed_dims[-1], num_classes, has_bias=True) if num_classes > 0 else Identity()
+        self.head = mint.nn.Linear(embed_dims[-1], num_classes, bias=True) if num_classes > 0 else Identity()
         # self._initialize_weights()
         self.cls_init_weights()
 
