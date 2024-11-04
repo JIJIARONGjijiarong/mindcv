@@ -10,6 +10,7 @@ import numpy as np
 
 import mindspore
 import mindspore.nn as nn
+import mindspore.ops as ops
 import mindspore.mint as mint
 from mindspore import Tensor
 from mindspore.common import initializer as weight_init
@@ -329,6 +330,7 @@ class PyramidVisionTransformer(nn.Cell):
         x, (H, W) = self.patch_embed4(x)
         cls_tokens = self.tile(self.cls_token, (B, 1, 1))
 
+        x = ops.Cast()(x, cls_tokens.dtype)
         x = self.Concat((cls_tokens, x), dim=1)
         ph, pw = self.patch_embed4.H, self.patch_embed4.W
         pos_embed_ = self._get_pos_embed(self.pos_embed4[:, 1:], ph, pw, H, W)

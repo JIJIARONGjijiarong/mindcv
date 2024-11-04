@@ -379,8 +379,8 @@ class EdgeNeXt(nn.Cell):
                 if isinstance(cell, mint.nn.Linear) and cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
             elif isinstance(cell, mint.nn.LayerNorm):
-                cell.weight.set_data(init.initializer(init.One(), cell.gamma.shape, cell.gamma.dtype))
-                cell.bias.set_data(init.initializer(init.Zero(), cell.beta.shape, cell.beta.dtype))
+                cell.weight.set_data(init.initializer(init.One(), cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
         self.head.weight.set_data(self.head.weight * self.head_init_scale)
         self.head.bias.set_data(self.head.bias * self.head_init_scale)
 
