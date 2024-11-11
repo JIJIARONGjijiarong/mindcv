@@ -127,7 +127,10 @@ class PatchEmbed(nn.Cell):
 class Pooling(nn.Cell):
     def __init__(self, pool_size=3):
         super().__init__()
-        self.pool = mint.nn.AvgPool2d(pool_size, stride=1, padding=pool_size // 2, count_include_pad=False)
+        # TODO: mint.nn.AvgPool2d count_include_pad=False下存在性能问题
+        # self.pool = mint.nn.AvgPool2d(pool_size, stride=1, padding=pool_size // 2, count_include_pad=False)
+
+        self.pool = nn.AvgPool2d(pool_size, stride=1, pad_mode="same")
 
     def construct(self, x):
         return self.pool(x) - x
@@ -141,7 +144,7 @@ class PoolFormerBlock(nn.Cell):
         dim,
         pool_size=3,
         mlp_ratio=4.0,
-        act_layer=nn.GELU,
+        act_layer=mint.nn.GELU,
         norm_layer=nn.GroupNorm,
         drop=0.0,
         drop_path=0.0,
@@ -182,7 +185,7 @@ def basic_blocks(
     layers,
     pool_size=3,
     mlp_ratio=4.0,
-    act_layer=nn.GELU,
+    act_layer=mint.nn.GELU,
     norm_layer=nn.GroupNorm,
     drop_rate=0.0,
     drop_path_rate=0.0,
@@ -216,7 +219,7 @@ class PoolFormer(nn.Cell):
         num_classes: number of classes for the image classification. Default: 1000
         global_pool: define the types of pooling layer. Default: avg
         norm_layer: define the types of normalization. Default: nn.GroupNorm
-        act_layer: define the types of activation. Default: nn.GELU
+        act_layer: define the types of activation. Default: mint.nn.GELU
         in_patch_size: specify the patch embedding for the input image. Default: 7
         in_stride: specify the stride for the input image. Default: 4.
         in_pad: specify the pad for the input image. Default: 2.
@@ -240,7 +243,7 @@ class PoolFormer(nn.Cell):
         num_classes=1000,
         global_pool="avg",
         norm_layer=nn.GroupNorm,
-        act_layer=nn.GELU,
+        act_layer=mint.nn.GELU,
         in_patch_size=7,
         in_stride=4,
         in_pad=2,
