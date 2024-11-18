@@ -165,7 +165,7 @@ def rel_logits_1d(q, rel_k, permute_mask):
     x = x_pad[:, :W, win_size-1:]
     # reshape and tile
     x = mint.reshape(x, (B, H, 1, W, win_size))
-    # TODON: ops.broadcast_to 已收录，不支持
+    # TODO: ops.broadcast_to 已收录，不支持
     x = ops.broadcast_to(x, (B, H, win_size, W, win_size))
     x = mint.permute(x, permute_mask)
     return x
@@ -603,7 +603,7 @@ class HaloNet(nn.Cell):
                                 downsample=True)
         self.classifier = nn.SequentialCell([
             SelectAdaptivePool2d(flatten=True),
-            mint.nn.Linear(chs_list[4], num_classes, TruncatedNormal(.02), bias_init='zeros'),
+            mint.nn.Linear(chs_list[4], num_classes, weight_init=TruncatedNormal(.02), bias_init='zeros'),
             Identity()]
         )
         self._initialize_weights()
