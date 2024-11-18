@@ -38,7 +38,7 @@ default_cfgs = {
 }
 
 
-class StdConv2d(nn.Conv2d):
+class StdConv2d(mint.nn.Conv2d):
     r"""Conv2d with Weight Standardization
     Args:
         in_channels(int): The channel number of the input tensor of the Conv2d layer.
@@ -197,7 +197,7 @@ class BiT_ResNet(nn.Cell):
         self.gn = norm(32, 2048 * wf)
         self.relu = mint.nn.ReLU()
         self.pool = GlobalAvgPooling(keep_dims=True)
-        self.classifier = nn.Conv2d(512 * block.expansion * wf, num_classes, kernel_size=1, has_bias=True)
+        self.classifier = mint.nn.Conv2d(512 * block.expansion * wf, num_classes, kernel_size=1, has_bias=True)
 
     def _make_layer(
         self,
