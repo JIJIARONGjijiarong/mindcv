@@ -50,16 +50,16 @@ class Mlp(nn.Cell):
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
         self.conv1 = nn.SequentialCell([
-            nn.Conv2d(in_features, hidden_features, 1, 1, has_bias=True),
+            mint.nn.Conv2d(in_features, hidden_features, 1, 1, bias=True),
             mint.nn.GELU(),
             mint.nn.BatchNorm2d(hidden_features),
         ])
-        self.proj = nn.Conv2d(
-            hidden_features, hidden_features, 3, 1, pad_mode='pad', padding=1, group=hidden_features, has_bias=True)
+        self.proj = mint.nn.Conv2d(
+            hidden_features, hidden_features, 3, 1, padding=1, padding_mode='zeros', groups=hidden_features, bias=True)
         self.proj_act = mint.nn.GELU()
         self.proj_bn = mint.nn.BatchNorm2d(hidden_features)
         self.conv2 = nn.SequentialCell([
-            nn.Conv2d(hidden_features, out_features, 1, 1, has_bias=True),
+            mint.nn.Conv2d(hidden_features, out_features, 1, 1, bias=True),
             mint.nn.BatchNorm2d(out_features),
         ])
         self.drop = Dropout(p=drop)
@@ -98,8 +98,7 @@ class Attention(nn.Cell):
 
         if self.sr_ratio > 1:
             self.sr = nn.SequentialCell([
-                nn.Conv2d(dim, dim, kernel_size=sr_ratio,
-                          stride=sr_ratio, group=dim, has_bias=True),
+                mint.nn.Conv2d(dim, dim, kernel_size=sr_ratio, stride=sr_ratio, groups=dim, bias=True),
                 mint.nn.BatchNorm2d(dim),
             ])
 
@@ -155,8 +154,7 @@ class Block(nn.Cell):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
                        act_layer=act_layer, drop=drop)
-        self.proj = nn.Conv2d(dim, dim, 3, 1, pad_mode='pad',
-                              padding=1, group=dim, has_bias=True)
+        self.proj = mint.nn.Conv2d(dim, dim, 3, 1, padding=1, padding_mode='zeros', groups=dim, bias=True)
 
     def construct(self, x, H, W, relative_pos):
         B, _, C = x.shape
@@ -186,8 +184,8 @@ class PatchEmbed(nn.Cell):
         self.patch_size = patch_size
         self.num_patches = num_patches
 
-        self.proj = nn.Conv2d(
-            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, has_bias=True)
+        self.proj = mint.nn.Conv2d(
+            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=True)
         self.norm = mint.nn.LayerNorm([embed_dim])
 
     def construct(self, x):
@@ -230,18 +228,18 @@ class CMT(nn.Cell):
         self.num_features = self.embed_dim = embed_dims[-1]
         norm_layer = norm_layer or mint.nn.LayerNorm
 
-        self.stem_conv1 = nn.Conv2d(
-            3, stem_channel, kernel_size=3, stride=2, pad_mode='pad', padding=1, has_bias=True)
+        self.stem_conv1 = mint.nn.Conv2d(
+            3, stem_channel, kernel_size=3, stride=2, padding=1, padding_mode='zeros',has_bias=True)
         self.stem_relu1 = mint.nn.GELU()
         self.stem_norm1 = mint.nn.BatchNorm2d(stem_channel)
 
         self.stem_conv2 = nn.Conv2d(
-            stem_channel, stem_channel, kernel_size=3, stride=1, pad_mode='pad', padding=1, has_bias=True)
+            stem_channel, stem_channel, kernel_size=3, stride=1, padding=1, padding_mode='zeros', has_bias=True)
         self.stem_relu2 = mint.nn.GELU()
         self.stem_norm2 = mint.nn.BatchNorm2d(stem_channel)
 
-        self.stem_conv3 = nn.Conv2d(
-            stem_channel, stem_channel, kernel_size=3, stride=1, pad_mode='pad', padding=1, has_bias=True)
+        self.stem_conv3 = mint.nn.Conv2d(
+            stem_channel, stem_channel, kernel_size=3, stride=1, padding=1, padding_mode='zeros', has_bias=True)
         self.stem_relu3 = mint.nn.GELU()
         self.stem_norm3 = mint.nn.BatchNorm2d(stem_channel)
 
@@ -307,8 +305,7 @@ class CMT(nn.Cell):
             for i in range(depths[3])])
 
         # Classifier head
-        self._fc = nn.Conv2d(
-            embed_dims[-1], fc_dim, kernel_size=1, has_bias=True)
+        self._fc = mint.nn.Conv2d(embed_dims[-1], fc_dim, kernel_size=1, bias=True)
         self._bn = mint.nn.BatchNorm2d(fc_dim)
         self._drop = Dropout(p=drop_rate)
         # ops.Identity 已收录，不支持
@@ -319,7 +316,7 @@ class CMT(nn.Cell):
 
     def _initialize_weights(self):
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(
                     init.initializer(init.HeNormal(mode='fan_out', nonlinearity='relu'),
                                      cell.weight.shape, cell.weight.dtype))
