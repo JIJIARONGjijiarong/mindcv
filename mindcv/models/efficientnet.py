@@ -168,15 +168,15 @@ class MBConv(nn.Cell):
         expanded_channels = cnf.adjust_channels(cnf.input_channels, cnf.expand_ratio)
         if expanded_channels != cnf.input_channels:
             layers.extend([
-                nn.Conv2d(cnf.input_channels, expanded_channels, kernel_size=1),
+                mint.nn.Conv2d(cnf.input_channels, expanded_channels, kernel_size=1),
                 norm(expanded_channels),
                 Swish(),
             ])
 
         # depthwise conv: splits the filter into groups.
         layers.extend([
-            nn.Conv2d(expanded_channels, expanded_channels, kernel_size=cnf.kernel_size,
-                      stride=cnf.stride, group=expanded_channels),
+            mint.nn.Conv2d(expanded_channels, expanded_channels, kernel_size=cnf.kernel_size,
+                      stride=cnf.stride, groups=expanded_channels),
             norm(expanded_channels),
             Swish(),
         ])
@@ -187,7 +187,7 @@ class MBConv(nn.Cell):
 
         # project
         layers.extend([
-            nn.Conv2d(expanded_channels, cnf.out_channels, kernel_size=1),
+            mint.nn.Conv2d(expanded_channels, cnf.out_channels, kernel_size=1),
             norm(cnf.out_channels),
         ])
 
@@ -241,7 +241,7 @@ class FusedMBConv(nn.Cell):
         if expanded_channels != cnf.input_channels:
             # fused expand
             layers.extend([
-                nn.Conv2d(cnf.input_channels, expanded_channels, kernel_size=cnf.kernel_size,
+                mint.nn.Conv2d(cnf.input_channels, expanded_channels, kernel_size=cnf.kernel_size,
                           stride=cnf.stride),
                 norm(expanded_channels),
                 Swish(),
@@ -249,12 +249,12 @@ class FusedMBConv(nn.Cell):
 
             # project
             layers.extend([
-                nn.Conv2d(expanded_channels, cnf.out_channels, kernel_size=1),
+                mint.nn.Conv2d(expanded_channels, cnf.out_channels, kernel_size=1),
                 norm(cnf.out_channels),
             ])
         else:
             layers.extend([
-                nn.Conv2d(cnf.input_channels, cnf.out_channels, kernel_size=cnf.kernel_size,
+                mint.nn.Conv2d(cnf.input_channels, cnf.out_channels, kernel_size=cnf.kernel_size,
                           stride=cnf.stride),
                 norm(cnf.out_channels),
                 Swish(),
@@ -377,7 +377,7 @@ class EfficientNet(nn.Cell):
         # building first layer
         firstconv_output_channels = inverted_residual_setting[0].input_channels
         layers.extend([
-            nn.Conv2d(in_channels, firstconv_output_channels, kernel_size=3, stride=2),
+            mint.nn.Conv2d(in_channels, firstconv_output_channels, kernel_size=3, stride=2),
             norm_layer(firstconv_output_channels),
             Swish(),
         ])
@@ -426,7 +426,7 @@ class EfficientNet(nn.Cell):
         lastconv_input_channels = inverted_residual_setting[-1].out_channels
         lastconv_output_channels = self.last_channel if self.last_channel is not None else 4 * lastconv_input_channels
         layers.extend([
-            nn.Conv2d(lastconv_input_channels, lastconv_output_channels, kernel_size=1),
+            mint.nn.Conv2d(lastconv_input_channels, lastconv_output_channels, kernel_size=1),
             norm_layer(lastconv_output_channels),
             Swish(),
         ])
@@ -466,7 +466,7 @@ class EfficientNet(nn.Cell):
                 cell.weight.set_data(weight_init.initializer(Uniform(init_range), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(weight_init.initializer(weight_init.Zero(), cell.bias.shape, cell.bias.dtype))
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 out_channel, _, kernel_size_h, kernel_size_w = cell.weight.shape
                 stddev = np.sqrt(2 / int(out_channel * kernel_size_h * kernel_size_w))
                 cell.weight.set_data(

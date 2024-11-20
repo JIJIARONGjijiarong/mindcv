@@ -56,12 +56,12 @@ class BottleBlock(nn.Cell):
     ):
         super().__init__()
         self.bn1 = mint.nn.BatchNorm2d(in_channel, eps=1e-3, momentum=0.9)
-        self.conv1 = nn.Conv2d(in_channel, num_1x1_a, 1, stride=1)
+        self.conv1 = mint.nn.Conv2d(in_channel, num_1x1_a, 1, stride=1)
         self.bn2 = mint.nn.BatchNorm2d(num_1x1_a, eps=1e-3, momentum=0.9)
-        self.conv2 = nn.Conv2d(num_1x1_a, num_3x3_b, 3, key_stride, pad_mode="pad", padding=1, group=g)
+        self.conv2 = mint.nn.Conv2d(num_1x1_a, num_3x3_b, 3, key_stride, padding_mode="zeros", padding=1, groups=g)
         self.bn3 = mint.nn.BatchNorm2d(num_3x3_b, eps=1e-3, momentum=0.9)
-        self.conv3_r = nn.Conv2d(num_3x3_b, num_1x1_c, 1, stride=1)
-        self.conv3_d = nn.Conv2d(num_3x3_b, inc, 1, stride=1)
+        self.conv3_r = mint.nn.Conv2d(num_3x3_b, num_1x1_c, 1, stride=1)
+        self.conv3_d = mint.nn.Conv2d(num_3x3_b, inc, 1, stride=1)
 
         self.relu = mint.nn.ReLU()
 
@@ -109,10 +109,8 @@ class DualPathBlock(nn.Cell):
         if self.has_proj:
             self.c1x1_w_bn = mint.nn.BatchNorm2d(in_channel, eps=1e-3, momentum=0.9)
             self.c1x1_w_relu = mint.nn.ReLU()
-            self.c1x1_w_r = nn.Conv2d(in_channel, num_1x1_c, kernel_size=1, stride=key_stride,
-                                      pad_mode="pad", padding=0)
-            self.c1x1_w_d = nn.Conv2d(in_channel, 2 * inc, kernel_size=1, stride=key_stride,
-                                      pad_mode="pad", padding=0)
+            self.c1x1_w_r = mint.nn.Conv2d(in_channel, num_1x1_c, kernel_size=1, stride=key_stride, padding=0)
+            self.c1x1_w_d = mint.nn.Conv2d(in_channel, 2 * inc, kernel_size=1, stride=key_stride, padding=0)
 
         self.layers = BottleBlock(in_channel, num_1x1_a, num_3x3_b, num_1x1_c, inc, g, key_stride)
 
@@ -166,7 +164,7 @@ class DPN(nn.Cell):
 
         # conv1
         blocks["conv1"] = nn.SequentialCell(OrderedDict([
-            ("conv", nn.Conv2d(in_channels, num_init_channel, kernel_size=7, stride=2, pad_mode="pad", padding=3)),
+            ("conv", mint.nn.Conv2d(in_channels, num_init_channel, kernel_size=7, stride=2, padding_mode="zeros", padding=3)),
             ("norm", mint.nn.BatchNorm2d(num_init_channel, eps=1e-3, momentum=0.9)),
             ("relu", mint.nn.ReLU()),
             # TODO: check padding
@@ -225,7 +223,7 @@ class DPN(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(
                     init.initializer(init.HeNormal(math.sqrt(5), mode="fan_out", nonlinearity="relu"),
                                      cell.weight.shape, cell.weight.dtype))

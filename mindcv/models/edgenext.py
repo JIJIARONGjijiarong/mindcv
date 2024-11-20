@@ -80,7 +80,7 @@ class LayerNorm(nn.LayerNorm):
 class PositionalEncodingFourier(nn.Cell):
     def __init__(self, hidden_dim=32, dim=768, temperature=10000):
         super().__init__()
-        self.token_projection = nn.Conv2d(hidden_dim * 2, dim, kernel_size=1, has_bias=True)
+        self.token_projection = mint.nn.Conv2d(hidden_dim * 2, dim, kernel_size=1, bias=True)
         self.scale = 2 * math.pi
         self.temperature = temperature
         self.hidden_dim = hidden_dim
@@ -126,8 +126,8 @@ class ConvEncoder(nn.Cell):
         kernel_size=7,
     ):
         super().__init__()
-        self.dwconv = nn.Conv2d(dim, dim, kernel_size=kernel_size, pad_mode="pad", padding=kernel_size // 2, group=dim,
-                                has_bias=True)
+        self.dwconv = mint.nn.Conv2d(dim, dim, kernel_size=kernel_size, padding_mode="zeros", padding=kernel_size // 2,
+                                     groups=dim, bias=True)
         self.norm = LayerNorm((dim,), eps=1e-6)
         self.pwconv1 = mint.nn.Linear(dim, expan_ratio * dim)
         self.act = mint.nn.GELU()
@@ -179,7 +179,8 @@ class SDTAEncoder(nn.Cell):
             self.nums = scales - 1
         convs = []
         for i in range(self.nums):
-            convs.append(nn.Conv2d(width, width, kernel_size=3, pad_mode="pad", padding=1, group=width, has_bias=True))
+            convs.append(mint.nn.Conv2d(width, width, kernel_size=3, padding_mode="zeros", padding=1, group=width,
+                                        bias=True))
         self.convs = nn.CellList(convs)
 
         self.pos_embd = None
@@ -330,14 +331,14 @@ class EdgeNeXt(nn.Cell):
             self.pos_embd = None
         self.downsample_layers = nn.CellList()  # stem and 3 intermediate downsampling conv layers
         stem = nn.SequentialCell(
-            nn.Conv2d(in_chans, dims[0], kernel_size=4, stride=4, has_bias=True),
+            mint.nn.Conv2d(in_chans, dims[0], kernel_size=4, stride=4, bias=True),
             LayerNorm((dims[0],), eps=1e-6, norm_axis=1),
         )
         self.downsample_layers.append(stem)
         for i in range(3):
             downsample_layer = nn.SequentialCell(
                 LayerNorm((dims[i],), eps=1e-6, norm_axis=1),
-                nn.Conv2d(dims[i], dims[i + 1], kernel_size=2, stride=2, has_bias=True),
+                mint.nn.Conv2d(dims[i], dims[i + 1], kernel_size=2, stride=2, bias=True),
             )
             self.downsample_layers.append(downsample_layer)
 
@@ -372,7 +373,7 @@ class EdgeNeXt(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, (mint.nn.Linear, nn.Conv2d)):
+            if isinstance(cell, (mint.nn.Linear, mint.nn.Conv2d)):
                 cell.weight.set_data(
                     init.initializer(init.TruncatedNormal(sigma=0.02), cell.weight.shape, cell.weight.dtype)
                 )

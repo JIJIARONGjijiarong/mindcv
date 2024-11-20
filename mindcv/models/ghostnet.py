@@ -61,7 +61,7 @@ class ConvBnAct(nn.Cell):
     ) -> None:
         super().__init__()
         self.features = nn.SequentialCell([
-            nn.Conv2d(in_chs, out_chs, kernel_size, stride, pad_mode="same"),
+            mint.nn.Conv2d(in_chs, out_chs, kernel_size, stride, pad_mode="same"),
             mint.nn.BatchNorm2d(out_chs),
             act_layer(),
         ])

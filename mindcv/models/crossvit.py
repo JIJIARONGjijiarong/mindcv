@@ -118,23 +118,22 @@ class PatchEmbed(nn.Cell):
         if multi_conv:
             if patch_size[0] == 12:
                 self.proj = nn.SequentialCell(
-                    nn.Conv2d(in_chans, embed_dim // 4, pad_mode='pad', kernel_size=7, stride=4, padding=3),
+                    mint.nn.Conv2d(in_chans, embed_dim // 4, padding_mode='zeros', kernel_size=7, stride=4, padding=3),
                     mint.nn.ReLU(),
-                    nn.Conv2d(embed_dim // 4, embed_dim // 2, pad_mode='pad', kernel_size=3, stride=3, padding=0),
+                    mint.nn.Conv2d(embed_dim // 4, embed_dim // 2, padding_mode='zeros', kernel_size=3, stride=3, padding=0),
                     mint.nn.ReLU(),
-                    nn.Conv2d(embed_dim // 2, embed_dim, pad_mode='pad', kernel_size=3, stride=1, padding=1),
+                    mint.nn.Conv2d(embed_dim // 2, embed_dim, padding_mode='zeros', kernel_size=3, stride=1, padding=1),
                 )
             elif patch_size[0] == 16:
                 self.proj = nn.SequentialCell(
-                    nn.Conv2d(in_chans, embed_dim // 4, pad_mode='pad', kernel_size=7, stride=4, padding=3),
+                    mint.nn.Conv2d(in_chans, embed_dim // 4, padding_mode='zeros', kernel_size=7, stride=4, padding=3),
                     mint.nn.ReLU(),
-                    nn.Conv2d(embed_dim // 4, embed_dim // 2, pad_mode='pad', kernel_size=3, stride=2, padding=1),
+                    mint.nn.Conv2d(embed_dim // 4, embed_dim // 2, padding_mode='zeros', kernel_size=3, stride=2, padding=1),
                     mint.nn.ReLU(),
-                    nn.Conv2d(embed_dim // 2, embed_dim, pad_mode='pad', kernel_size=3, stride=2, padding=1),
+                    mint.nn.Conv2d(embed_dim // 2, embed_dim, padding_mode='zeros', kernel_size=3, stride=2, padding=1),
                 )
         else:
-            self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, pad_mode='valid',
-                                  has_bias=True)
+            self.proj = mint.nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=True)
 
     def construct(self, x: Tensor) -> Tensor:
         B, C, H, W = x.shape

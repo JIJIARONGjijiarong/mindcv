@@ -104,14 +104,14 @@ class ConvRelPosEnc(nn.Cell):
         for cur_window, cur_head_split in window.items():
             dilation = 1
             padding_size = (cur_window + (cur_window - 1) * (dilation - 1)) // 2
-            cur_conv = nn.Conv2d(in_channels=cur_head_split * Ch,
-                                 out_channels=cur_head_split * Ch,
-                                 kernel_size=(cur_window, cur_window),
-                                 padding=(padding_size, padding_size, padding_size, padding_size),
-                                 dilation=(dilation, dilation),
-                                 group=cur_head_split * Ch,
-                                 pad_mode='pad',
-                                 has_bias=True)
+            cur_conv = mint.nn.Conv2d(in_channels=cur_head_split * Ch,
+                                      out_channels=cur_head_split * Ch,
+                                      kernel_size=(cur_window, cur_window),
+                                      padding=(padding_size, padding_size, padding_size, padding_size),
+                                      dilation=(dilation, dilation),
+                                      groups=cur_head_split * Ch,
+                                      padding_mode='zeros',
+                                      bias=True)
             self.conv_list.append(cur_conv)
             self.head_splits.append(cur_head_split)
         self.channel_splits = [x * Ch for x in self.head_splits]
@@ -210,14 +210,14 @@ class ConvPosEnc(nn.Cell):
         k=3
     ) -> None:
         super(ConvPosEnc, self).__init__()
-        self.proj = nn.Conv2d(in_channels=dim,
-                              out_channels=dim,
-                              kernel_size=k,
-                              stride=1,
-                              padding=k // 2,
-                              group=dim,
-                              pad_mode='pad',
-                              has_bias=True)
+        self.proj = mint.nn.Conv2d(in_channels=dim,
+                                   out_channels=dim,
+                                   kernel_size=k,
+                                   stride=1,
+                                   padding=k // 2,
+                                   groups=dim,
+                                   padding_mode='zeros',
+                                   bias=True)
 
     def construct(self, x, size) -> Tensor:
         B, N, C = x.shape
@@ -419,12 +419,11 @@ class PatchEmbed(nn.Cell):
         self.in_chans = in_chans
         self.embed_dim = embed_dim
 
-        self.proj = nn.Conv2d(in_channels=in_chans,
-                              out_channels=embed_dim,
-                              kernel_size=patch_size,
-                              stride=patch_size,
-                              pad_mode='valid',
-                              has_bias=True)
+        self.proj = mint.nn.Conv2d(in_channels=in_chans,
+                                   out_channels=embed_dim,
+                                   kernel_size=patch_size,
+                                   stride=patch_size,
+                                   bias=True)
 
         self.norm = mint.nn.LayerNorm((embed_dim,), eps=1e-5)
 
