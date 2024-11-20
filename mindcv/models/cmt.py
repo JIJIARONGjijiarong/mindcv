@@ -229,17 +229,17 @@ class CMT(nn.Cell):
         norm_layer = norm_layer or mint.nn.LayerNorm
 
         self.stem_conv1 = mint.nn.Conv2d(
-            3, stem_channel, kernel_size=3, stride=2, padding=1, padding_mode='zeros',has_bias=True)
+            3, stem_channel, kernel_size=3, stride=2, padding=1, padding_mode='zeros', bias=True)
         self.stem_relu1 = mint.nn.GELU()
         self.stem_norm1 = mint.nn.BatchNorm2d(stem_channel)
 
         self.stem_conv2 = nn.Conv2d(
-            stem_channel, stem_channel, kernel_size=3, stride=1, padding=1, padding_mode='zeros', has_bias=True)
+            stem_channel, stem_channel, kernel_size=3, stride=1, padding=1, padding_mode='zeros', bias=True)
         self.stem_relu2 = mint.nn.GELU()
         self.stem_norm2 = mint.nn.BatchNorm2d(stem_channel)
 
         self.stem_conv3 = mint.nn.Conv2d(
-            stem_channel, stem_channel, kernel_size=3, stride=1, padding=1, padding_mode='zeros', has_bias=True)
+            stem_channel, stem_channel, kernel_size=3, stride=1, padding=1, padding_mode='zeros', bias=True)
         self.stem_relu3 = mint.nn.GELU()
         self.stem_norm3 = mint.nn.BatchNorm2d(stem_channel)
 
