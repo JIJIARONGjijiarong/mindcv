@@ -78,19 +78,19 @@ class ConvMlp(nn.Cell):
         hidden_features = hidden_features or in_features
         bias = to_2tuple(bias)
 
-        self.fc1 = nn.Conv2d(in_features, hidden_features, kernel_size=1, has_bias=bias[0])
+        self.fc1 = mint.nn.Conv2d(in_features, hidden_features, kernel_size=1, bias=bias[0])
         self.norm = norm_layer(hidden_features) if norm_layer else Identity()
         # TODO: mint.nn.GELU approximate 参数暂不支持
         # 应为 self.act = act_layer(approximate=False)
         self.act = act_layer()
         self.drop = Dropout(p=drop)
-        self.fc2 = nn.Conv2d(hidden_features, out_features, kernel_size=1, has_bias=bias[1])
+        self.fc2 = mint.nn.Conv2d(hidden_features, out_features, kernel_size=1, bias=bias[1])
         self.cls_init_weights()
 
     def cls_init_weights(self):
         """Initialize weights for cells."""
         for name, m in self.cells_and_names():
-            if isinstance(m, nn.Conv2d):
+            if isinstance(m, mint.nn.Conv2d):
                 m.weight.set_data(
                     init.initializer(init.TruncatedNormal(sigma=.02), m.weight.shape, m.weight.dtype))
                 if m.bias is not None:
@@ -116,8 +116,8 @@ class PatchEmbed(nn.Cell):
         patch_size = to_2tuple(patch_size)
         stride = to_2tuple(stride)
         # padding = to_2tuple(padding)
-        self.proj = nn.Conv2d(in_chs, embed_dim, kernel_size=patch_size, stride=stride, padding=padding, pad_mode="pad",
-                              has_bias=True)
+        self.proj = mint.nn.Conv2d(in_chs, embed_dim, kernel_size=patch_size, stride=stride, padding=padding,
+                                   bias=True)
         self.norm = norm_layer(embed_dim) if norm_layer else Identity()
 
     def construct(self, x):

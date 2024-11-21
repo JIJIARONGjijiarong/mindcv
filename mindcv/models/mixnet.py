@@ -7,7 +7,7 @@ import math
 from typing import Optional
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops, mint
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained
 from .layers.compatibility import Dropout
@@ -74,13 +74,13 @@ class GroupedConv2d(nn.Cell):
         super(GroupedConv2d, self).__init__()
         self.num_groups = len(kernel_size)
         if self.num_groups == 1:
-            self.grouped_conv = nn.Conv2d(
+            self.grouped_conv = mint.nn.Conv2d(
                 in_channels,
                 out_channels,
                 kernel_size[0],
                 stride=stride,
-                pad_mode="pad",
                 padding=padding,
+                padding_mode='zeros',
                 has_bias=False
             )
         else:
@@ -89,13 +89,13 @@ class GroupedConv2d(nn.Cell):
 
             self.grouped_conv = nn.CellList()
             for i in range(self.num_groups):
-                self.grouped_conv.append(nn.Conv2d(
+                self.grouped_conv.append(mint.nn.Conv2d(
                     self.split_in_channels[i],
                     self.split_out_channels[i],
                     kernel_size[i],
                     stride=stride,
-                    pad_mode="pad",
                     padding=padding,
+                    padding_mode='zeros',
                     has_bias=False
                 ))
 
@@ -123,13 +123,13 @@ class MDConv(nn.Cell):
         self.num_groups = len(kernel_size)
 
         if self.num_groups == 1:
-            self.mixed_depthwise_conv = nn.Conv2d(
+            self.mixed_depthwise_conv = mint.nn.Conv2d(
                 channels,
                 channels,
                 kernel_size[0],
                 stride=stride,
-                pad_mode="pad",
                 padding=kernel_size[0] // 2,
+                padding_mode='zeros',
                 group=channels,
                 has_bias=False
             )
@@ -138,13 +138,13 @@ class MDConv(nn.Cell):
 
             self.mixed_depthwise_conv = nn.CellList()
             for i in range(self.num_groups):
-                self.mixed_depthwise_conv.append(nn.Conv2d(
+                self.mixed_depthwise_conv.append(mint.nn.Conv2d(
                     self.split_channels[i],
                     self.split_channels[i],
                     kernel_size[i],
                     stride=stride,
-                    pad_mode="pad",
                     padding=kernel_size[i] // 2,
+                    padding_mode='zeros',
                     group=self.split_channels[i],
                     has_bias=False
                 ))
@@ -310,7 +310,7 @@ class MixNet(nn.Cell):
 
         # stem convolution
         self.stem_conv = nn.SequentialCell([
-            nn.Conv2d(in_channels, stem_channels, 3, stride=2, pad_mode="pad", padding=1),
+            mint.nn.Conv2d(in_channels, stem_channels, 3, stride=2, padding=1, padding_mode='zeros'),
             mint.nn.BatchNorm2d(stem_channels),
             mint.nn.ReLU()
         ])
@@ -333,7 +333,7 @@ class MixNet(nn.Cell):
 
         # head
         self.head_conv = nn.SequentialCell([
-            nn.Conv2d(block_configs[-1][1], feature_size, 1, pad_mode="pad", padding=0),
+            mint.nn.Conv2d(block_configs[-1][1], feature_size, 1,padding=0, padding_mode='zeros'),
             mint.nn.BatchNorm2d(feature_size),
             mint.nn.ReLU()
         ])
@@ -347,7 +347,7 @@ class MixNet(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 fan_out = cell.kernel_size[0] * cell.kernel_size[1] * cell.out_channels
                 cell.weight.set_data(
                     init.initializer(init.Normal(math.sqrt(2.0 / fan_out)),

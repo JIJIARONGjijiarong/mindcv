@@ -84,7 +84,7 @@ class Attention(nn.Cell):
 
         self.sr_ratio = sr_ratio
         if sr_ratio > 1:
-            self.sr = nn.Conv2d(dim, dim, kernel_size=sr_ratio, stride=sr_ratio, has_bias=True)
+            self.sr = mint.nn.Conv2d(dim, dim, kernel_size=sr_ratio, stride=sr_ratio, bias=True)
             self.norm = mint.nn.LayerNorm([dim])
 
     def construct(self, x, H, W):
@@ -153,7 +153,7 @@ class PatchEmbed(nn.Cell):
 
         self.H, self.W = img_size[0] // patch_size[0], img_size[1] // patch_size[1]
         self.num_patches = self.H * self.W
-        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, has_bias=True)
+        self.proj = mint.nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=True)
         self.norm = mint.nn.LayerNorm([embed_dim], eps=1e-5)
         self.reshape = mint.reshape
         self.transpose = mint.permute
@@ -274,7 +274,7 @@ class PyramidVisionTransformer(nn.Cell):
             elif isinstance(cell, mint.nn.LayerNorm):
                 cell.weight.set_data(weight_init.initializer(weight_init.One(), cell.weight.shape, cell.weight.dtype))
                 cell.bias.set_data(weight_init.initializer(weight_init.Zero(), cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.Conv2d):
+            elif isinstance(cell, mint.nn.Conv2d):
                 fan_out = cell.kernel_size[0] * cell.kernel_size[1] * cell.out_channels
                 fan_out //= cell.group
                 cell.weight.set_data(weight_init.initializer(weight_init.Normal(sigma=math.sqrt(2.0 / fan_out)),

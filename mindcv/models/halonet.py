@@ -48,15 +48,8 @@ class ConvBnAct(nn.Cell):
                  bias_init=False
                  ):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels=in_channels,
-                              out_channels=out_channels,
-                              kernel_size=kernel_size,
-                              stride=stride,
-                              pad_mode="pad",
-                              padding=padding,
-                              weight_init=HeUniform(),
-                              has_bias=bias_init
-                              )
+        self.conv = mint.nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
+                                   stride=stride, padding=padding, padding_mode='zeros', bias=bias_init)
         self.bn = mint.nn.BatchNorm2d(out_channels)
         self.act = ActLayer(act)
 
@@ -265,13 +258,8 @@ class HaloAttention(nn.Cell):
             use_avg_pool = avg_down or block_size % stride != 0
             self.block_stride = stride
             self.block_size_ds = self.block_size // self.block_stride
-        self.q = nn.Conv2d(dim,
-                           self.dim_out_qk,
-                           1,
-                           stride=self.block_stride,
-                           has_bias=qkv_bias,
-                           weight_init=HeUniform())
-        self.kv = nn.Conv2d(dim, self.dim_out_qk + self.dim_out_v, 1, has_bias=qkv_bias)
+        self.q = mint.nn.Conv2d(dim, self.dim_out_qk, 1, stride=self.block_stride, bias=qkv_bias)
+        self.kv = mint.nn.Conv2d(dim, self.dim_out_qk + self.dim_out_v, 1, bias=qkv_bias)
         self.pos_embed = RelPosEmb(
             block_size=self.block_size_ds, win_size=self.win_size, dim_head=self.dim_head_qk)
         self.pool = mint.nn.AvgPool2d(2, 2) if use_avg_pool else Identity()
@@ -611,7 +599,7 @@ class HaloNet(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(init.initializer(init.HeUniform(), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))

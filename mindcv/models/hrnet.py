@@ -64,18 +64,18 @@ class BasicBlock(nn.Cell):
         assert groups == 1, "BasicBlock only supports groups=1"
         assert base_width == 64, "BasicBlock only supports base_width=64"
 
-        self.conv1 = nn.Conv2d(
+        self.conv1 = mint.nn.Conv2d(
             in_channels,
             channels,
             kernel_size=3,
             stride=stride,
             padding=1,
-            pad_mode="pad",
+            padding_mode='zeros',
         )
         self.bn1 = norm(channels)
         self.relu = mint.nn.ReLU()
-        self.conv2 = nn.Conv2d(
-            channels, channels, kernel_size=3, stride=1, padding=1, pad_mode="pad"
+        self.conv2 = mint.nn.Conv2d(
+            channels, channels, kernel_size=3, stride=1, padding=1, padding_mode='zeros'
         )
         self.bn2 = norm(channels)
         self.down_sample = down_sample
@@ -120,19 +120,19 @@ class Bottleneck(nn.Cell):
 
         width = int(channels * (base_width / 64.0)) * groups
 
-        self.conv1 = nn.Conv2d(in_channels, width, kernel_size=1, stride=1)
+        self.conv1 = mint.nn.Conv2d(in_channels, width, kernel_size=1, stride=1)
         self.bn1 = norm(width)
-        self.conv2 = nn.Conv2d(
+        self.conv2 = mint.nn.Conv2d(
             width,
             width,
             kernel_size=3,
             stride=stride,
             padding=1,
-            pad_mode="pad",
-            group=groups,
+            padding_mode='zeros',
+            groups=groups,
         )
         self.bn2 = norm(width)
-        self.conv3 = nn.Conv2d(
+        self.conv3 = mint.nn.Conv2d(
             width, channels * self.expansion, kernel_size=1, stride=1
         )
         self.bn3 = norm(channels * self.expansion)
@@ -226,7 +226,7 @@ class HRModule(nn.Cell):
         downsample = None
         if stride != 1 or self.num_inchannels[branch_index] != num_channels[branch_index] * block.expansion:
             downsample = nn.SequentialCell(
-                nn.Conv2d(
+                mint.nn.Conv2d(
                     self.num_inchannels[branch_index],
                     num_channels[branch_index] * block.expansion,
                     kernel_size=1,
@@ -280,7 +280,7 @@ class HRModule(nn.Cell):
                 if j > i:
                     fuse_layer.append(
                         nn.SequentialCell(
-                            nn.Conv2d(
+                            mint.nn.Conv2d(
                                 num_inchannels[j], num_inchannels[i], kernel_size=1
                             ),
                             mint.nn.BatchNorm2d(num_inchannels[i]),
@@ -295,13 +295,13 @@ class HRModule(nn.Cell):
                             num_outchannels_conv3x3 = num_inchannels[i]
                             conv3x3s.append(
                                 nn.SequentialCell(
-                                    nn.Conv2d(
+                                    mint.nn.Conv2d(
                                         num_inchannels[j],
                                         num_outchannels_conv3x3,
                                         kernel_size=3,
                                         stride=2,
                                         padding=1,
-                                        pad_mode="pad",
+                                        padding_mode='zeros',
                                     ),
                                     mint.nn.BatchNorm2d(num_outchannels_conv3x3),
                                 )
@@ -310,13 +310,13 @@ class HRModule(nn.Cell):
                             num_outchannels_conv3x3 = num_inchannels[j]
                             conv3x3s.append(
                                 nn.SequentialCell(
-                                    nn.Conv2d(
+                                    mint.nn.Conv2d(
                                         num_inchannels[j],
                                         num_outchannels_conv3x3,
                                         kernel_size=3,
                                         stride=2,
                                         padding=1,
-                                        pad_mode="pad",
+                                        padding_mode='zeros',
                                     ),
                                     mint.nn.BatchNorm2d(num_outchannels_conv3x3),
                                     mint.nn.ReLU(),
@@ -386,12 +386,12 @@ class HRNet(nn.Cell):
 
         self.stage_cfg = stage_cfg
         # stem net
-        self.conv1 = nn.Conv2d(
-            in_channels, 64, kernel_size=3, stride=2, padding=1, pad_mode="pad"
+        self.conv1 = mint.nn.Conv2d(
+            in_channels, 64, kernel_size=3, stride=2, padding=1, padding_mode='zeros'
         )
         self.bn1 = mint.nn.BatchNorm2d(64)
-        self.conv2 = nn.Conv2d(
-            64, 64, kernel_size=3, stride=2, padding=1, pad_mode="pad"
+        self.conv2 = mint.nn.Conv2d(
+            64, 64, kernel_size=3, stride=2, padding=1, padding_mode='zeros'
         )
         self.bn2 = mint.nn.BatchNorm2d(64)
         self.relu = mint.nn.ReLU()
@@ -475,13 +475,13 @@ class HRNet(nn.Cell):
             out_channels = head_channels[i + 1] * head_block.expansion
 
             downsamp_module = nn.SequentialCell(
-                nn.Conv2d(
+                mint.nn.Conv2d(
                     in_channels=in_channels,
                     out_channels=out_channels,
                     kernel_size=3,
                     stride=2,
-                    pad_mode="pad",
                     padding=1,
+                    padding_mode='zeros'
                 ),
                 mint.nn.BatchNorm2d(out_channels),
                 mint.nn.ReLU(),
@@ -491,7 +491,7 @@ class HRNet(nn.Cell):
         downsamp_modules = nn.CellList(downsamp_modules)
 
         final_layer = nn.SequentialCell(
-            nn.Conv2d(
+            mint.nn.Conv2d(
                 in_channels=head_channels[3] * head_block.expansion,
                 out_channels=2048,
                 kernel_size=1,
@@ -517,12 +517,12 @@ class HRNet(nn.Cell):
                 if num_channels_cur_layer[i] != num_channels_pre_layer[i]:
                     transition_layers.append(
                         nn.SequentialCell(
-                            nn.Conv2d(
+                            mint.nn.Conv2d(
                                 num_channels_pre_layer[i],
                                 num_channels_cur_layer[i],
                                 kernel_size=3,
                                 padding=1,
-                                pad_mode="pad",
+                                padding_mode='zeros'
                             ),
                             mint.nn.BatchNorm2d(num_channels_cur_layer[i]),
                             mint.nn.ReLU(),
@@ -544,13 +544,13 @@ class HRNet(nn.Cell):
                     conv3x3s.append(
                         nn.SequentialCell(
                             [
-                                nn.Conv2d(
+                                mint.nn.Conv2d(
                                     inchannels,
                                     outchannels,
                                     kernel_size=3,
                                     stride=2,
                                     padding=1,
-                                    pad_mode="pad",
+                                    padding_mode='zeros',
                                 ),
                                 mint.nn.BatchNorm2d(outchannels),
                                 mint.nn.ReLU(),
@@ -573,7 +573,7 @@ class HRNet(nn.Cell):
         downsample = None
         if stride != 1 or in_channels != out_channels * block.expansion:
             downsample = nn.SequentialCell(
-                nn.Conv2d(
+                mint.nn.Conv2d(
                     in_channels,
                     out_channels * block.expansion,
                     kernel_size=1,
@@ -582,8 +582,7 @@ class HRNet(nn.Cell):
                 mint.nn.BatchNorm2d(out_channels * block.expansion),
             )
 
-        layers = []
-        layers.append(block(in_channels, out_channels, stride, down_sample=downsample))
+        layers = [block(in_channels, out_channels, stride, down_sample=downsample)]
         for _ in range(1, blocks):
             layers.append(block(out_channels * block.expansion, out_channels))
 

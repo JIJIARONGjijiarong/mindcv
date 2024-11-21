@@ -48,11 +48,11 @@ default_cfgs = {
 def depthwise_separable_conv(inp: int, oup: int, stride: int) -> nn.SequentialCell:
     return nn.SequentialCell(
         # dw
-        nn.Conv2d(inp, inp, 3, stride, pad_mode="pad", padding=1, group=inp, has_bias=False),
+        mint.nn.Conv2d(inp, inp, 3, stride, padding=1, groups=inp, bias=False),
         mint.nn.BatchNorm2d(inp),
         mint.nn.ReLU(),
         # pw
-        nn.Conv2d(inp, oup, 1, 1, pad_mode="pad", padding=0, has_bias=False),
+        mint.nn.Conv2d(inp, oup, 1, 1, padding=0, bias=False),
         mint.nn.BatchNorm2d(oup),
         mint.nn.ReLU(),
     )
@@ -97,7 +97,7 @@ class MobileNetV1(nn.Cell):
         ]
 
         features = [
-            nn.Conv2d(in_channels, input_channels, 3, 2, pad_mode="pad", padding=1, has_bias=False),
+            mint.nn.Conv2d(in_channels, input_channels, 3, 2, padding=1, bias=False),
             mint.nn.BatchNorm2d(input_channels),
             mint.nn.ReLU(),
         ]
@@ -114,7 +114,7 @@ class MobileNetV1(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(init.initializer(init.XavierUniform(), cell.weight.shape, cell.weight.dtype))
             if isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(init.initializer(init.TruncatedNormal(), cell.weight.shape, cell.weight.dtype))

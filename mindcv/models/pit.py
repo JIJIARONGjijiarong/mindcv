@@ -62,14 +62,14 @@ class conv_embedding(nn.Cell):
         padding: int,
     ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(
+        self.conv = mint.nn.Conv2d(
             in_channels,
             out_channels,
             kernel_size=patch_size,
             stride=stride,
-            pad_mode="pad",
             padding=padding,
-            has_bias=True,
+            padding_mode='zeros',
+            bias=True,
         )
 
     def construct(self, x: Tensor) -> Tensor:
@@ -89,15 +89,15 @@ class conv_head_pooling(nn.Cell):
         pad_mode: str = "pad",
     ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(
+        self.conv = mint.nn.Conv2d(
             in_feature,
             out_feature,
             kernel_size=stride + 1,
-            padding=stride // 2,
             stride=stride,
-            pad_mode=pad_mode,
-            group=in_feature,
-            has_bias=True,
+            padding=stride // 2,
+            padding_mode='zeros',
+            groups=in_feature,
+            bias=True,
         )
         self.fc = mint.nn.Linear(in_features=in_feature, out_features=out_feature, bias=True)
 
@@ -360,7 +360,7 @@ class PoolingTransformer(nn.Cell):
             if isinstance(cell, mint.nn.LayerNorm):
                 cell.weight.set_data(init.initializer(init.One(), cell.weight.shape, cell.weight.dtype))
                 cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 n = cell.kernel_size[0] * cell.kernel_size[1] * cell.in_channels
                 cell.weight.set_data(
                     init.initializer(init.Uniform(math.sqrt(1.0 / n)), cell.weight.shape, cell.weight.dtype)

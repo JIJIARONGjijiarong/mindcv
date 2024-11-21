@@ -46,11 +46,10 @@ class SeparableConv2d(nn.Cell):
         bias: bool = False,
     ) -> None:
         super().__init__()
-        self.depthwise_conv2d = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=dw_kernel,
-                                          stride=dw_stride, pad_mode="pad", padding=dw_padding, group=in_channels,
-                                          has_bias=bias)
-        self.pointwise_conv2d = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1,
-                                          pad_mode="pad", has_bias=bias)
+        self.depthwise_conv2d = mint.nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=dw_kernel,
+                                               stride=dw_stride, padding=dw_padding, groups=in_channels,bias=bias)
+        self.pointwise_conv2d = mint.nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1,
+                                               stride=1, bias=bias)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.depthwise_conv2d(x)
@@ -73,13 +72,11 @@ class BranchSeparables(nn.Cell):
         super().__init__()
         self.relu = mint.nn.ReLU()
         self.separable_1 = SeparableConv2d(
-            in_channels, in_channels, kernel_size, stride, padding, bias=bias
-        )
+            in_channels, in_channels, kernel_size, stride, padding, bias=bias)
         self.bn_sep_1 = mint.nn.BatchNorm2d(num_features=in_channels, eps=0.001, momentum=0.9, affine=True)
         self.relu1 = mint.nn.ReLU()
         self.separable_2 = SeparableConv2d(
-            in_channels, out_channels, kernel_size, 1, padding, bias=bias
-        )
+            in_channels, out_channels, kernel_size, 1, padding, bias=bias)
         self.bn_sep_2 = mint.nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9, affine=True)
 
     def construct(self, x: Tensor) -> Tensor:
@@ -170,8 +167,8 @@ class CellStem0(nn.Cell):
         self.stem_filters = stem_filters
         self.conv_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)
         ])
 
@@ -238,15 +235,15 @@ class CellStem1(nn.Cell):
         self.stem_filters = stem_filters
         self.conv_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=2 * self.num_filters, out_channels=self.num_filters, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=2 * self.num_filters, out_channels=self.num_filters, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)])
 
         self.relu = mint.nn.ReLU()
         self.path_1 = nn.SequentialCell([
             mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=False),
-            nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False)])
+            mint.nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
+                           bias=False)])
 
         self.path_2 = nn.CellList([])
         # TODO: nn.Pad 未收录，不支持
@@ -255,8 +252,8 @@ class CellStem1(nn.Cell):
             mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=False)
         )
         self.path_2.append(
-            nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False)
+            mint.nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
+                           bias=False)
         )
 
         self.final_path_bn = mint.nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)
@@ -359,15 +356,15 @@ class FirstCell(nn.Cell):
         super().__init__()
         self.conv_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
 
         self.relu = mint.nn.ReLU()
         self.path_1 = nn.SequentialCell([
             mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=False),
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False)])
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False)])
 
         self.path_2 = nn.CellList([])
         # TODO: nn.Pad 未收录，不支持
@@ -376,8 +373,8 @@ class FirstCell(nn.Cell):
             mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=False)
         )
         self.path_2.append(
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False)
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False)
         )
 
         self.final_path_bn = mint.nn.BatchNorm2d(num_features=out_channels_left * 2, eps=0.001, momentum=0.9, affine=True)
@@ -449,14 +446,14 @@ class NormalCell(nn.Cell):
         super().__init__()
         self.conv_prev_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
 
         self.conv_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
 
         self.comb_iter_0_left = BranchSeparables(
@@ -521,14 +518,14 @@ class ReductionCell0(nn.Cell):
         super().__init__()
         self.conv_prev_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
 
         self.conv_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
 
         self.comb_iter_0_left = BranchSeparablesReduction(
@@ -595,14 +592,14 @@ class ReductionCell1(nn.Cell):
         super().__init__()
         self.conv_prev_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
 
         self.conv_1x1 = nn.SequentialCell([
             mint.nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
+            mint.nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
 
         self.comb_iter_0_left = BranchSeparables(
@@ -708,9 +705,8 @@ class NASNetAMobile(nn.Cell):
         # 24 is default value for the architecture
 
         self.conv0 = nn.SequentialCell([
-            nn.Conv2d(in_channels=in_channels, out_channels=self.stem_filters, kernel_size=3, stride=2, pad_mode="pad",
-                      padding=0,
-                      has_bias=False),
+            mint.nn.Conv2d(in_channels=in_channels, out_channels=self.stem_filters, kernel_size=3, stride=2,
+                           bias=False),
             mint.nn.BatchNorm2d(num_features=self.stem_filters, eps=0.001, momentum=0.9, affine=True)
         ])
 
@@ -820,7 +816,7 @@ class NASNetAMobile(nn.Cell):
         """Initialize weights for cells."""
         self.init_parameters_data()
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 n = cell.kernel_size[0] * cell.kernel_size[1] * cell.out_channels
                 cell.weight.set_data(init.initializer(init.Normal(math.sqrt(2. / n), 0),
                                                       cell.weight.shape, cell.weight.dtype))

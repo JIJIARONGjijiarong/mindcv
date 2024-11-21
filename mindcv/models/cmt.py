@@ -233,7 +233,7 @@ class CMT(nn.Cell):
         self.stem_relu1 = mint.nn.GELU()
         self.stem_norm1 = mint.nn.BatchNorm2d(stem_channel)
 
-        self.stem_conv2 = nn.Conv2d(
+        self.stem_conv2 = mint.nn.Conv2d(
             stem_channel, stem_channel, kernel_size=3, stride=1, padding=1, padding_mode='zeros', bias=True)
         self.stem_relu2 = mint.nn.GELU()
         self.stem_norm2 = mint.nn.BatchNorm2d(stem_channel)

@@ -139,19 +139,19 @@ class InvertedResidual(nn.Cell):
         if expand_ratio != 1:
             # pw
             layers.extend([
-                nn.Conv2d(in_channels, hidden_dim, 1, 1, pad_mode="pad", padding=0, has_bias=False),
+                mint.nn.Conv2d(in_channels, hidden_dim, 1, 1, padding=0, bias=False),
                 mint.nn.BatchNorm2d(hidden_dim),
                 # TODO: nn.ReLU6 已收录，不支持
                 nn.ReLU6()
             ])
         layers.extend([
             # dw
-            nn.Conv2d(hidden_dim, hidden_dim, 3, stride, pad_mode="pad", padding=1, group=hidden_dim, has_bias=False),
+            mint.nn.Conv2d(hidden_dim, hidden_dim, 3, stride, padding=1, groups=hidden_dim, bias=False),
             nn.BatchNorm2d(hidden_dim),
             # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
             # pw-linear
-            nn.Conv2d(hidden_dim, out_channels, 1, 1, pad_mode="pad", padding=0, has_bias=False),
+            mint.nn.Conv2d(hidden_dim, out_channels, 1, 1, bias=False),
             mint.nn.BatchNorm2d(out_channels),
         ])
         self.layers = nn.SequentialCell(layers)
@@ -201,7 +201,7 @@ class MobileNetV2(nn.Cell):
 
         # Building stem conv layer.
         features = [
-            nn.Conv2d(in_channels, input_channels, 3, 2, pad_mode="pad", padding=1, has_bias=False),
+            mint.nn.Conv2d(in_channels, input_channels, 3, 2, padding=1, bias=False),
             nn.BatchNorm2d(input_channels),
             # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
@@ -227,7 +227,7 @@ class MobileNetV2(nn.Cell):
 
         # Building last point-wise layers.
         features.extend([
-            nn.Conv2d(input_channels, last_channels, 1, 1, pad_mode="pad", padding=0, has_bias=False),
+            nn.Conv2d(input_channels, last_channels, 1, 1, padding=0, bias=False),
             nn.BatchNorm2d(last_channels),
             # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
@@ -248,7 +248,7 @@ class MobileNetV2(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 n = cell.kernel_size[0] * cell.kernel_size[1] * cell.out_channels
                 cell.weight.set_data(
                     init.initializer(init.Normal(sigma=math.sqrt(2. / n), mean=0.0),

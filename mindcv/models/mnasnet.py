@@ -59,16 +59,16 @@ class InvertedResidual(nn.Cell):
 
         self.layers = nn.SequentialCell([
             # pw
-            nn.Conv2d(in_channels, hidden_dim, kernel_size=1, stride=1),
+            mint.nn.Conv2d(in_channels, hidden_dim, kernel_size=1, stride=1),
             mint.nn.BatchNorm2d(hidden_dim, momentum=0.99, eps=1e-3),
             mint.nn.ReLU(),
             # dw
-            nn.Conv2d(hidden_dim, hidden_dim, kernel_size=kernel_size, stride=stride, pad_mode="pad",
-                      padding=kernel_size // 2, group=hidden_dim),
+            mint.nn.Conv2d(hidden_dim, hidden_dim, kernel_size=kernel_size, stride=stride,
+                           padding=kernel_size // 2, groups=hidden_dim),
             mint.nn.BatchNorm2d(hidden_dim, momentum=0.99, eps=1e-3),
             mint.nn.ReLU(),
             # pw-linear
-            nn.Conv2d(hidden_dim, out_channels, kernel_size=1, stride=1),
+            mint.nn.Conv2d(hidden_dim, out_channels, kernel_size=1, stride=1),
             mint.nn.BatchNorm2d(out_channels, momentum=0.99, eps=1e-3),
         ])
 
@@ -112,14 +112,13 @@ class Mnasnet(nn.Cell):
         input_channels = make_divisible(16 * alpha, 8)
 
         features: List[nn.Cell] = [
-            nn.Conv2d(in_channels, mid_channels, kernel_size=3, stride=2, pad_mode="pad", padding=1),
+            mint.nn.Conv2d(in_channels, mid_channels, kernel_size=3, stride=2, padding=1),
             mint.nn.BatchNorm2d(mid_channels, momentum=0.99, eps=1e-3),
             mint.nn.ReLU(),
-            nn.Conv2d(mid_channels, mid_channels, kernel_size=3, stride=1, pad_mode="pad", padding=1,
-                      group=mid_channels),
+            mint.nn.Conv2d(mid_channels, mid_channels, kernel_size=3, stride=1, padding=1, groups=mid_channels),
             mint.nn.BatchNorm2d(mid_channels, momentum=0.99, eps=1e-3),
             mint.nn.ReLU(),
-            nn.Conv2d(mid_channels, input_channels, kernel_size=1, stride=1),
+            mint.nn.Conv2d(mid_channels, input_channels, kernel_size=1, stride=1),
             mint.nn.BatchNorm2d(input_channels, momentum=0.99, eps=1e-3),
         ]
 
@@ -132,7 +131,7 @@ class Mnasnet(nn.Cell):
                 input_channels = output_channels
 
         features.extend([
-            nn.Conv2d(input_channels, 1280, kernel_size=1, stride=1),
+            mint.nn.Conv2d(input_channels, 1280, kernel_size=1, stride=1),
             mint.nn.BatchNorm2d(1280, momentum=0.99, eps=1e-3),
             mint.nn.ReLU(),
         ])
@@ -145,7 +144,7 @@ class Mnasnet(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(
                     init.initializer(init.HeNormal(mode="fan_out", nonlinearity="relu"),
                                      cell.weight.shape, cell.weight.dtype))
