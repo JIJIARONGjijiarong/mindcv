@@ -227,7 +227,7 @@ class MobileNetV2(nn.Cell):
 
         # Building last point-wise layers.
         features.extend([
-            nn.Conv2d(input_channels, last_channels, 1, 1, padding=0, bias=False),
+            mint.nn.Conv2d(input_channels, last_channels, 1, 1, padding=0, bias=False),
             nn.BatchNorm2d(last_channels),
             # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),

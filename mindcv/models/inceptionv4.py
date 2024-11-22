@@ -285,7 +285,7 @@ class InceptionV4(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(
                     init.initializer(init.XavierUniform(), cell.weight.shape, cell.weight.dtype))
 
