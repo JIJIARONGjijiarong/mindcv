@@ -276,7 +276,7 @@ class PyramidVisionTransformer(nn.Cell):
                 cell.bias.set_data(weight_init.initializer(weight_init.Zero(), cell.bias.shape, cell.bias.dtype))
             elif isinstance(cell, mint.nn.Conv2d):
                 fan_out = cell.kernel_size[0] * cell.kernel_size[1] * cell.out_channels
-                fan_out //= cell.group
+                fan_out //= cell.groups
                 cell.weight.set_data(weight_init.initializer(weight_init.Normal(sigma=math.sqrt(2.0 / fan_out)),
                                                              cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
