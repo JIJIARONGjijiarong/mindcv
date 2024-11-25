@@ -107,7 +107,7 @@ class ConvRelPosEnc(nn.Cell):
             cur_conv = mint.nn.Conv2d(in_channels=cur_head_split * Ch,
                                       out_channels=cur_head_split * Ch,
                                       kernel_size=(cur_window, cur_window),
-                                      padding=(padding_size, padding_size, padding_size, padding_size),
+                                      padding=padding_size,
                                       dilation=(dilation, dilation),
                                       groups=cur_head_split * Ch,
                                       padding_mode='zeros',

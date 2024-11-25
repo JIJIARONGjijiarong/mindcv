@@ -184,12 +184,12 @@ class CellStem0(nn.Cell):
             self.stem_filters, self.num_filters, 7, 2, 3, bias=False
         )
 
-        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=2, padding=1, count_include_pad=False)
+        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=2, padding=1, count_include_pad=True)
         self.comb_iter_2_right = BranchSeparablesStem(
             self.stem_filters, self.num_filters, 5, 2, 2, bias=False
         )
 
-        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             self.num_filters, self.num_filters, 3, 1, 1, bias=False
@@ -241,7 +241,7 @@ class CellStem1(nn.Cell):
 
         self.relu = mint.nn.ReLU()
         self.path_1 = nn.SequentialCell([
-            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=False),
+            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=True),
             mint.nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
                            bias=False)])
 
@@ -249,7 +249,7 @@ class CellStem1(nn.Cell):
         # TODO: nn.Pad 未收录，不支持
         self.path_2.append(nn.Pad(paddings=((0, 0), (0, 0), (0, 1), (0, 1)), mode="CONSTANT"))
         self.path_2.append(
-            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=False)
+            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=True)
         )
         self.path_2.append(
             mint.nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
@@ -285,7 +285,7 @@ class CellStem1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=False)
+        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=True)
         self.comb_iter_2_right = BranchSeparables(
             self.num_filters,
             self.num_filters,
@@ -295,7 +295,7 @@ class CellStem1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             self.num_filters,
@@ -362,7 +362,7 @@ class FirstCell(nn.Cell):
 
         self.relu = mint.nn.ReLU()
         self.path_1 = nn.SequentialCell([
-            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=False),
+            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=True),
             mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
                            bias=False)])
 
@@ -370,7 +370,7 @@ class FirstCell(nn.Cell):
         # TODO: nn.Pad 未收录，不支持
         self.path_2.append(nn.Pad(paddings=((0, 0), (0, 0), (0, 1), (0, 1)), mode="CONSTANT"))
         self.path_2.append(
-            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=False)
+            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=True)
         )
         self.path_2.append(
             mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
@@ -393,10 +393,10 @@ class FirstCell(nn.Cell):
             out_channels_right, out_channels_right, 3, 1, 1, bias=False
         )
 
-        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
+        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
-        self.comb_iter_3_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
-        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
+        self.comb_iter_3_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             out_channels_right, out_channels_right, 3, 1, 1, bias=False
@@ -470,10 +470,10 @@ class NormalCell(nn.Cell):
             out_channels_left, out_channels_left, 3, 1, 1, bias=False
         )
 
-        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
+        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
-        self.comb_iter_3_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
-        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
+        self.comb_iter_3_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             out_channels_right, out_channels_right, 3, 1, 1, bias=False
@@ -540,12 +540,12 @@ class ReductionCell0(nn.Cell):
             out_channels_right, out_channels_right, 7, 2, 3, bias=False
         )
 
-        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=False)
+        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=True)
         self.comb_iter_2_right = BranchSeparablesReduction(
             out_channels_right, out_channels_right, 5, 2, 2, bias=False
         )
 
-        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparablesReduction(
             out_channels_right, out_channels_right, 3, 1, 1, bias=False
@@ -629,7 +629,7 @@ class ReductionCell1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=False)
+        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=True)
         self.comb_iter_2_right = BranchSeparables(
             out_channels_right,
             out_channels_right,
@@ -639,7 +639,7 @@ class ReductionCell1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=False)
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             out_channels_right,

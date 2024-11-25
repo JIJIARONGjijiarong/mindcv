@@ -37,8 +37,8 @@ default_cfgs = {
     "BiT_resnet101": _cfg(url="https://download.mindspore.cn/toolkits/mindcv/bit/BiT_resnet101-2efa9106.ckpt"),
 }
 
-
-class StdConv2d(mint.nn.Conv2d):
+# TODO: mint.nn.Conv2d
+class StdConv2d(nn.Conv2d):
     r"""Conv2d with Weight Standardization
     Args:
         in_channels(int): The channel number of the input tensor of the Conv2d layer.
