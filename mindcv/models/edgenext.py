@@ -179,7 +179,7 @@ class SDTAEncoder(nn.Cell):
             self.nums = scales - 1
         convs = []
         for i in range(self.nums):
-            convs.append(mint.nn.Conv2d(width, width, kernel_size=3, padding_mode="zeros", padding=1, group=width,
+            convs.append(mint.nn.Conv2d(width, width, kernel_size=3, padding_mode="zeros", padding=1, groups=width,
                                         bias=True))
         self.convs = nn.CellList(convs)
 

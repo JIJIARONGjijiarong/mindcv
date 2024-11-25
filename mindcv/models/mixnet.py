@@ -81,7 +81,7 @@ class GroupedConv2d(nn.Cell):
                 stride=stride,
                 padding=padding,
                 padding_mode='zeros',
-                has_bias=False
+                bias=False
             )
         else:
             self.split_in_channels = _splitchannels(in_channels, self.num_groups)
@@ -96,7 +96,7 @@ class GroupedConv2d(nn.Cell):
                     stride=stride,
                     padding=padding,
                     padding_mode='zeros',
-                    has_bias=False
+                    bias=False
                 ))
 
     def construct(self, x: Tensor) -> Tensor:
@@ -130,8 +130,8 @@ class MDConv(nn.Cell):
                 stride=stride,
                 padding=kernel_size[0] // 2,
                 padding_mode='zeros',
-                group=channels,
-                has_bias=False
+                groups=channels,
+                bias=False
             )
         else:
             self.split_channels = _splitchannels(channels, self.num_groups)
@@ -145,8 +145,8 @@ class MDConv(nn.Cell):
                     stride=stride,
                     padding=kernel_size[i] // 2,
                     padding_mode='zeros',
-                    group=self.split_channels[i],
-                    has_bias=False
+                    groups=self.split_channels[i],
+                    bias=False
                 ))
 
     def construct(self, x: Tensor) -> Tensor:
