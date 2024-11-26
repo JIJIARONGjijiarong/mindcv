@@ -43,10 +43,10 @@ class BasicConv2d(nn.Cell):
         out_channels: int,
         kernel_size: Union[int, Tuple] = 1,
         stride: int = 1,
-        padding: int = 0,
+        padding: Union[int, Tuple] = 0,
     ) -> None:
         super().__init__()
-        self.conv = mint.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=padding)
+        self.conv = mint.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=padding, bias=False)
         self.bn = mint.nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.9997)
         self.relu = mint.nn.ReLU()
 
@@ -76,8 +76,8 @@ class Stem(nn.Cell):
 
         self.mixed_4a_branch_1 = nn.SequentialCell([
             BasicConv2d(160, 64, kernel_size=1, stride=1),
-            BasicConv2d(64, 64, kernel_size=(1, 7), stride=1),
-            BasicConv2d(64, 64, kernel_size=(7, 1), stride=1),
+            BasicConv2d(64, 64, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(64, 64, kernel_size=(7, 1), stride=1, padding=(3, 0)),
             BasicConv2d(64, 96, kernel_size=3, stride=1)
         ])
 
@@ -140,15 +140,15 @@ class InceptionB(nn.Cell):
         self.branch_0 = BasicConv2d(1024, 384, kernel_size=1, stride=1)
         self.branch_1 = nn.SequentialCell([
             BasicConv2d(1024, 192, kernel_size=1, stride=1),
-            BasicConv2d(192, 224, kernel_size=(1, 7), stride=1),
-            BasicConv2d(224, 256, kernel_size=(7, 1), stride=1),
+            BasicConv2d(192, 224, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(224, 256, kernel_size=(7, 1), stride=1, padding=(3, 0)),
         ])
         self.branch_2 = nn.SequentialCell([
             BasicConv2d(1024, 192, kernel_size=1, stride=1),
-            BasicConv2d(192, 192, kernel_size=(7, 1), stride=1),
-            BasicConv2d(192, 224, kernel_size=(1, 7), stride=1),
-            BasicConv2d(224, 224, kernel_size=(7, 1), stride=1),
-            BasicConv2d(224, 256, kernel_size=(1, 7), stride=1)
+            BasicConv2d(192, 192, kernel_size=(7, 1), stride=1, padding=(3, 0)),
+            BasicConv2d(192, 224, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(224, 224, kernel_size=(7, 1), stride=1, padding=(3, 0)),
+            BasicConv2d(224, 256, kernel_size=(1, 7), stride=1, padding=(0, 3))
         ])
         self.branch_3 = nn.SequentialCell([
             mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1),
@@ -196,8 +196,8 @@ class ReductionB(nn.Cell):
         ])
         self.branch_1 = nn.SequentialCell([
             BasicConv2d(1024, 256, kernel_size=1, stride=1),
-            BasicConv2d(256, 256, kernel_size=(1, 7), stride=1),
-            BasicConv2d(256, 320, kernel_size=(7, 1), stride=1),
+            BasicConv2d(256, 256, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(256, 320, kernel_size=(7, 1), stride=1, padding=(3, 0)),
             BasicConv2d(320, 320, kernel_size=3, stride=2)
         ])
         self.branch_2 = mint.nn.MaxPool2d(3, stride=2)
@@ -218,16 +218,16 @@ class InceptionC(nn.Cell):
         self.branch_0 = BasicConv2d(1536, 256, kernel_size=1, stride=1)
 
         self.branch_1 = BasicConv2d(1536, 384, kernel_size=1, stride=1)
-        self.branch_1_1 = BasicConv2d(384, 256, kernel_size=(1, 3), stride=1)
-        self.branch_1_2 = BasicConv2d(384, 256, kernel_size=(3, 1), stride=1)
+        self.branch_1_1 = BasicConv2d(384, 256, kernel_size=(1, 3), stride=1, padding=(0, 1))
+        self.branch_1_2 = BasicConv2d(384, 256, kernel_size=(3, 1), stride=1, padding=(1, 0))
 
         self.branch_2 = nn.SequentialCell([
             BasicConv2d(1536, 384, kernel_size=1, stride=1),
-            BasicConv2d(384, 448, kernel_size=(3, 1), stride=1),
-            BasicConv2d(448, 512, kernel_size=(1, 3), stride=1),
+            BasicConv2d(384, 448, kernel_size=(3, 1), stride=1, padding=(1, 0)),
+            BasicConv2d(448, 512, kernel_size=(1, 3), stride=1, padding=(0, 1)),
         ])
-        self.branch_2_1 = BasicConv2d(512, 256, kernel_size=(1, 3), stride=1)
-        self.branch_2_2 = BasicConv2d(512, 256, kernel_size=(3, 1), stride=1)
+        self.branch_2_1 = BasicConv2d(512, 256, kernel_size=(1, 3), stride=1, padding=(0, 1))
+        self.branch_2_2 = BasicConv2d(512, 256, kernel_size=(3, 1), stride=1, padding=(1, 0))
 
         self.branch_3 = nn.SequentialCell([
             mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1),
