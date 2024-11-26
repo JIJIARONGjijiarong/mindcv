@@ -176,7 +176,7 @@ class MBConv(nn.Cell):
         # depthwise conv: splits the filter into groups.
         layers.extend([
             mint.nn.Conv2d(expanded_channels, expanded_channels, kernel_size=cnf.kernel_size,
-                      stride=cnf.stride, groups=expanded_channels),
+                      stride=cnf.stride, groups=expanded_channels, padding=cnf.kernel_size//2),
             norm(expanded_channels),
             Swish(),
         ])
@@ -242,7 +242,7 @@ class FusedMBConv(nn.Cell):
             # fused expand
             layers.extend([
                 mint.nn.Conv2d(cnf.input_channels, expanded_channels, kernel_size=cnf.kernel_size,
-                          stride=cnf.stride),
+                          stride=cnf.stride, padding=cnf.kernel_size//2),
                 norm(expanded_channels),
                 Swish(),
             ])
@@ -255,7 +255,7 @@ class FusedMBConv(nn.Cell):
         else:
             layers.extend([
                 mint.nn.Conv2d(cnf.input_channels, cnf.out_channels, kernel_size=cnf.kernel_size,
-                          stride=cnf.stride),
+                          stride=cnf.stride, padding=cnf.kernel_size//2),
                 norm(cnf.out_channels),
                 Swish(),
             ])
