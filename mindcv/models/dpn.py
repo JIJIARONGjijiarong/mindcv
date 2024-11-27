@@ -223,6 +223,7 @@ class DPN(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
+            # TODO: mint.nn.Conv2d init
             if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(
                     init.initializer(init.HeNormal(math.sqrt(5), mode="fan_out", nonlinearity="relu"),
