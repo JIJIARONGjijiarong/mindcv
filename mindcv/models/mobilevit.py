@@ -7,12 +7,13 @@ import math
 from typing import Dict, Optional, Tuple, Union
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, ops, mint
 
 from .helpers import load_pretrained, make_divisible
 from .layers.compatibility import Dropout, Interpolate
 from .layers.pooling import GlobalAvgPooling
 from .registry import register_model
+from .layers.extend_bmm import ExtendBatchMatMul
 
 __all__ = [
     "mobilevit_xx_small",
@@ -52,8 +53,8 @@ class ConvLayer(nn.Cell):
                  padding: Optional[int] = None,
                  dilation: int = 1,
                  groups: int = 1,
-                 norm: Optional[nn.Cell] = nn.BatchNorm2d,
-                 activation: Optional[nn.Cell] = nn.SiLU,
+                 norm: Optional[nn.Cell] = mint.nn.BatchNorm2d,
+                 activation: Optional[nn.Cell] = mint.nn.SiLU,
                  has_bias: Optional[bool] = False) -> None:
         super().__init__()
 
@@ -132,8 +133,8 @@ class InvertedResidual(nn.Cell):
                     in_channels=in_channels,
                     out_channels=hidden_dim,
                     kernel_size=1,
-                    norm=nn.BatchNorm2d,
-                    activation=nn.SiLU
+                    norm=mint.nn.BatchNorm2d,
+                    activation=mint.nn.SiLU
                 ),
             )
 
@@ -144,8 +145,8 @@ class InvertedResidual(nn.Cell):
                 kernel_size=3,
                 stride=stride,
                 groups=hidden_dim,
-                norm=nn.BatchNorm2d,
-                activation=nn.SiLU
+                norm=mint.nn.BatchNorm2d,
+                activation=mint.nn.SiLU
             ),
         )
 
@@ -210,31 +211,31 @@ class MultiHeadAttention(nn.Cell):
                 )
             )
 
-        self.qkv_proj = nn.Dense(in_channels=embed_dim, out_channels=embed_dim * 3, has_bias=bias)
+        self.qkv_proj = mint.nn.Linear(in_features=embed_dim, out_features=embed_dim * 3, bias=bias)
 
         self.attn_dropout = Dropout(p=attn_dropout)
-        self.out_proj = nn.Dense(in_channels=embed_dim, out_channels=embed_dim, has_bias=bias)
+        self.out_proj = mint.nn.Linear(in_features=embed_dim, out_features=embed_dim, bias=bias)
 
         self.head_dim = embed_dim // num_heads
         self.scaling = self.head_dim ** -0.5
-        self.softmax = nn.Softmax(axis=-1)
+        self.softmax = mint.nn.Softmax(dim=-1)
         self.num_heads = num_heads
         self.embed_dim = embed_dim
-        self.batch_matmul = ops.BatchMatMul()
+        self.batch_matmul = ExtendBatchMatMul()
 
     def construct(self, x: Tensor) -> Tensor:
         B, N, C = x.shape
         qkv = self.qkv_proj(x)
-        qkv = ops.reshape(qkv, (B, N, 3, self.num_heads, C // self.num_heads))
-        qkv = ops.transpose(qkv, (2, 0, 3, 1, 4))
+        qkv = mint.reshape(qkv, (B, N, 3, self.num_heads, C // self.num_heads))
+        qkv = mint.permute(qkv, (2, 0, 3, 1, 4))
         q, k, v = qkv[0], qkv[1], qkv[2]
 
-        attn = ops.BatchMatMul(transpose_b=True)(q, k) * self.scaling
-        attn = nn.Softmax(axis=-1)(attn)
+        attn = ExtendBatchMatMul(transpose_b=True)(q, k) * self.scaling
+        attn = mint.nn.Softmax(dim=-1)(attn)
         attn = self.attn_dropout(attn)
 
-        x = ops.transpose(ops.BatchMatMul()(attn, v), (0, 2, 1, 3))
-        x = ops.reshape(x, (B, N, C))
+        x = mint.permute(ExtendBatchMatMul()(attn, v), (0, 2, 1, 3))
+        x = mint.reshape(x, (B, N, C))
         x = self.out_proj(x)
         return x
 
@@ -278,17 +279,17 @@ class TransformerEncoder(nn.Cell):
         )
 
         self.pre_norm_mha = nn.SequentialCell(
-            nn.LayerNorm((embed_dim,)),
+            mint.nn.LayerNorm((embed_dim,)),
             attn_unit,
             Dropout(p=dropout)
         )
 
         self.pre_norm_ffn = nn.SequentialCell(
-            nn.LayerNorm((embed_dim,)),
-            nn.Dense(in_channels=embed_dim, out_channels=ffn_latent_dim, has_bias=True),
-            nn.SiLU(),
+            mint.nn.LayerNorm((embed_dim,)),
+            mint.nn.Linear(in_features=embed_dim, out_features=ffn_latent_dim, bias=True),
+            mint.nn.SiLU(),
             Dropout(p=ffn_dropout),
-            nn.Dense(in_channels=ffn_latent_dim, out_channels=embed_dim, has_bias=True),
+            mint.nn.Linear(in_features=ffn_latent_dim, out_features=embed_dim, bias=True),
             Dropout(p=dropout)
         )
         self.embed_dim = embed_dim
@@ -394,7 +395,7 @@ class MobileViTBlock(nn.Cell):
             )
             for _ in range(n_transformer_blocks)
         ]
-        self.global_rep.append(nn.LayerNorm((transformer_dim,)))
+        self.global_rep.append(mint.nn.LayerNorm((transformer_dim,)))
         self.global_rep = nn.CellList(self.global_rep)
 
         self.conv_proj = conv_1x1_out
@@ -435,15 +436,15 @@ class MobileViTBlock(nn.Cell):
         num_patches = num_patch_h * num_patch_w  # N
 
         # [B, C, H, W] -> [B * C * n_h, p_h, n_w, p_w]
-        x = ops.reshape(x, (batch_size * in_channels * num_patch_h, patch_h, num_patch_w, patch_w))
+        x = mint.reshape(x, (batch_size * in_channels * num_patch_h, patch_h, num_patch_w, patch_w))
         # [B * C * n_h, p_h, n_w, p_w] -> [B * C * n_h, n_w, p_h, p_w]
-        x = ops.transpose(x, (0, 2, 1, 3))
+        x = mint.permute(x, (0, 2, 1, 3))
         # [B * C * n_h, n_w, p_h, p_w] -> [B, C, N, P] where P = p_h * p_w and N = n_h * n_w
-        x = ops.reshape(x, (batch_size, in_channels, num_patches, patch_area))
+        x = mint.reshape(x, (batch_size, in_channels, num_patches, patch_area))
         # [B, C, N, P] -> [B, P, N, C]
-        x = ops.transpose(x, (0, 3, 2, 1))
+        x = mint.permute(x, (0, 3, 2, 1))
         # [B, P, N, C] -> [BP, N, C]
-        x = ops.reshape(x, (batch_size * patch_area, num_patches, -1))
+        x = mint.reshape(x, (batch_size * patch_area, num_patches, -1))
 
         info_dict = {
             "orig_size": (orig_h, orig_w),
@@ -471,13 +472,13 @@ class MobileViTBlock(nn.Cell):
         num_patch_w = info_dict["num_patches_w"]
 
         # [B, P, N, C] -> [B, C, N, P]
-        x = ops.transpose(x, (0, 3, 2, 1))
+        x = mint.permute(x, (0, 3, 2, 1))
         # [B, C, N, P] -> [B*C*n_h, n_w, p_h, p_w]
-        x = ops.reshape(x, (batch_size * channels * num_patch_h, num_patch_w, self.patch_h, self.patch_w))
+        x = mint.reshape(x, (batch_size * channels * num_patch_h, num_patch_w, self.patch_h, self.patch_w))
         # [B*C*n_h, n_w, p_h, p_w] -> [B*C*n_h, p_h, n_w, p_w]
-        x = ops.transpose(x, (0, 2, 1, 3))
+        x = mint.permute(x, (0, 2, 1, 3))
         # [B*C*n_h, p_h, n_w, p_w] -> [B, C, H, W]
-        x = ops.reshape(x, (batch_size, channels, num_patch_h * self.patch_h, num_patch_w * self.patch_w))
+        x = mint.reshape(x, (batch_size, channels, num_patch_h * self.patch_h, num_patch_w * self.patch_w))
         if info_dict["interpolate"]:
             x = self.interpolate(x, size=info_dict["orig_size"])
         return x
@@ -493,7 +494,7 @@ class MobileViTBlock(nn.Cell):
         # [B x Patch x Patches x C] -> [B x C x Patches x Patch]
         fm = self.folding(x=patches, info_dict=info_dict)
         fm = self.conv_proj(fm)
-        fm = self.fusion(ops.concat((res, fm), 1))
+        fm = self.fusion(mint.concat((res, fm), 1))
         return fm
 
 
@@ -532,7 +533,7 @@ class MobileViT(nn.Cell):
         classifier.append(nn.Flatten())
         if 0.0 < model_cfg["cls_dropout"] < 1.0:
             classifier.append(Dropout(p=model_cfg["cls_dropout"]))
-        classifier.append(nn.Dense(in_channels=exp_channels, out_channels=num_classes))
+        classifier.append(mint.nn.Linear(in_features=exp_channels, out_features=num_classes))
         self.classifier = nn.SequentialCell(classifier)
         self._initialize_weights()
 
@@ -609,17 +610,17 @@ class MobileViT(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Dense):
+            if isinstance(cell, mint.nn.Linear):
                 if cell.weight is not None:
                     cell.weight.set_data(init.initializer(init.TruncatedNormal(sigma=.02), cell.weight.shape,
                                                           cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer('zeros', cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, (nn.LayerNorm, nn.BatchNorm2d)):
-                if cell.gamma is not None:
-                    cell.gamma.set_data(init.initializer('ones', cell.gamma.shape, cell.gamma.dtype))
-                if cell.beta is not None:
-                    cell.beta.set_data(init.initializer('zeros', cell.beta.shape, cell.beta.dtype))
+            elif isinstance(cell, (mint.nn.LayerNorm, mint.nn.BatchNorm2d)):
+                if cell.weight is not None:
+                    cell.weight.set_data(init.initializer('ones', cell.weight.shape, cell.weight.dtype))
+                if cell.bias is not None:
+                    cell.bias.set_data(init.initializer('zeros', cell.bias.shape, cell.bias.dtype))
             elif isinstance(cell, nn.Conv2d):
                 if cell.weight is not None:
                     cell.weight.set_data(init.initializer(init.HeNormal(mode='fan_out', nonlinearity='leaky_relu'),

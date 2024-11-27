@@ -5,7 +5,7 @@ Refer to GhostNet: More Features from Cheap Operations.
 import math
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained, make_divisible
 from .layers.compatibility import Dropout
@@ -56,12 +56,12 @@ class ConvBnAct(nn.Cell):
         out_chs: int,
         kernel_size: int,
         stride: int = 1,
-        act_layer: nn.Cell = nn.ReLU,
+        act_layer: nn.Cell = mint.nn.ReLU,
     ) -> None:
         super().__init__()
         self.features = nn.SequentialCell([
-            nn.Conv2d(in_chs, out_chs, kernel_size, stride, pad_mode="same"),
-            nn.BatchNorm2d(out_chs),
+            mint.nn.Conv2d(in_chs, out_chs, kernel_size, stride, padding=kernel_size//2, bias=False),
+            mint.nn.BatchNorm2d(out_chs),
             act_layer(),
         ])
 
@@ -87,23 +87,23 @@ class GhostModule(nn.Cell):
         new_channels = init_channels * (ratio - 1)
 
         self.primary_conv = nn.SequentialCell(
-            nn.Conv2d(inp, init_channels, kernel_size, stride, pad_mode="pad",
-                      padding=kernel_size // 2, has_bias=False),
-            nn.BatchNorm2d(init_channels),
-            nn.ReLU() if relu else nn.SequentialCell(),
+            mint.nn.Conv2d(inp, init_channels, kernel_size, stride,
+                           padding=kernel_size // 2, padding_mode='zeros', bias=False),
+            mint.nn.BatchNorm2d(init_channels),
+            mint.nn.ReLU() if relu else nn.SequentialCell(),
         )
 
         self.cheap_operation = nn.SequentialCell(
-            nn.Conv2d(init_channels, new_channels, dw_size, 1, pad_mode="pad",
-                      padding=dw_size // 2, group=init_channels, has_bias=False),
-            nn.BatchNorm2d(new_channels),
-            nn.ReLU() if relu else nn.SequentialCell(),
+            mint.nn.Conv2d(init_channels, new_channels, dw_size, 1,
+                           padding=dw_size // 2, padding_mode='zeros', groups=init_channels, bias=False),
+            mint.nn.BatchNorm2d(new_channels),
+            mint.nn.ReLU() if relu else nn.SequentialCell(),
         )
 
     def construct(self, x: Tensor) -> Tensor:
         x1 = self.primary_conv(x)
         x2 = self.cheap_operation(x1)
-        out = ops.concat((x1, x2), axis=1)
+        out = mint.concat((x1, x2), dim=1)
         return out[:, :self.oup, :, :]
 
 
@@ -126,10 +126,10 @@ class GhostBottleneck(nn.Cell):
 
         # Depth-wise convolution
         if self.stride > 1:
-            self.conv_dw = nn.Conv2d(mid_chs, mid_chs, dw_kernel_size, stride=stride,
-                                     pad_mode="pad", padding=(dw_kernel_size - 1) // 2,
-                                     group=mid_chs, has_bias=False)
-            self.bn_dw = nn.BatchNorm2d(mid_chs)
+            self.conv_dw = mint.nn.Conv2d(mid_chs, mid_chs, dw_kernel_size, stride=stride,
+                                          padding=(dw_kernel_size - 1) // 2, padding_mode='zeros',
+                                          groups=mid_chs, bias=False)
+            self.bn_dw = mint.nn.BatchNorm2d(mid_chs)
 
         # Squeeze-and-excitation
         if has_se:
@@ -145,11 +145,10 @@ class GhostBottleneck(nn.Cell):
             self.shortcut = nn.SequentialCell()
         else:
             self.shortcut = nn.SequentialCell(
-                nn.Conv2d(in_chs, in_chs, dw_kernel_size, stride=stride, pad_mode="pad",
-                          padding=(dw_kernel_size - 1) // 2, group=in_chs, has_bias=False),
-                nn.BatchNorm2d(in_chs),
-                nn.Conv2d(in_chs, out_chs, 1, stride=1, pad_mode="pad", padding=0, has_bias=False),
-                nn.BatchNorm2d(out_chs),
+                mint.nn.Conv2d(in_chs, in_chs, dw_kernel_size, stride=stride, padding=(dw_kernel_size - 1) // 2, padding_mode='zeros', groups=in_chs, bias=False),
+                mint.nn.BatchNorm2d(in_chs),
+                mint.nn.Conv2d(in_chs, out_chs, 1, stride=1, padding=0, padding_mode='zeros',bias=False),
+                mint.nn.BatchNorm2d(out_chs),
             )
 
     def construct(self, x: Tensor) -> Tensor:
@@ -224,9 +223,10 @@ class GhostNet(nn.Cell):
 
         # building first layer
         stem_chs = make_divisible(16 * width, 4)
-        self.conv_stem = nn.Conv2d(in_channels, stem_chs, 3, 2, pad_mode="pad", padding=1, has_bias=False)
-        self.bn1 = nn.BatchNorm2d(stem_chs)
-        self.act1 = nn.ReLU()
+        self.conv_stem = mint.nn.Conv2d(in_channels, stem_chs, 3, 2,
+                                        padding=1, padding_mode='zeros', bias=False)
+        self.bn1 = mint.nn.BatchNorm2d(stem_chs)
+        self.act1 = mint.nn.ReLU()
         prev_chs = stem_chs
 
         # building inverted residual blocks
@@ -249,25 +249,26 @@ class GhostNet(nn.Cell):
         # building last several layers
         self.num_features = out_chs = 1280
         self.global_pool = GlobalAvgPooling(keep_dims=True)
-        self.conv_head = nn.Conv2d(prev_chs, out_chs, 1, 1, pad_mode="pad", padding=0, has_bias=True)
-        self.act2 = nn.ReLU()
+        self.conv_head = mint.nn.Conv2d(prev_chs, out_chs, 1, 1,
+                                        padding=0, padding_mode='zeros', bias=True)
+        self.act2 = mint.nn.ReLU()
         self.flatten = nn.Flatten()
         if self.drop_rate > 0.0:
             self.dropout = Dropout(p=drop_rate)
-        self.classifier = nn.Dense(out_chs, num_classes)
+        self.classifier = mint.nn.Linear(out_chs, num_classes)
         self._initialize_weights()
 
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(init.initializer(init.HeUniform(), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
-                cell.gamma.set_data(init.initializer("ones", cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer("zeros", cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
+                cell.weight.set_data(init.initializer("ones", cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(init.initializer(init.HeUniform(), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))

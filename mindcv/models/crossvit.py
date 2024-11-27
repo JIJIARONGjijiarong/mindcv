@@ -9,6 +9,7 @@ import mindspore as ms
 import mindspore.common.initializer as init
 import mindspore.nn as nn
 import mindspore.ops as ops
+import mindspore.mint as mint
 from mindspore import Tensor
 from mindspore import dtype as mstype
 from mindspore.common.initializer import TruncatedNormal
@@ -19,6 +20,7 @@ from .layers.drop_path import DropPath
 from .layers.helpers import to_2tuple
 from .layers.identity import Identity
 from .layers.mlp import Mlp
+from .layers.extend_bmm import ExtendBatchMatMul
 from .registry import register_model
 
 __all__ = [
@@ -55,27 +57,27 @@ class Attention(nn.Cell):
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
 
-        self.qkv = nn.Dense(dim, dim * 3, has_bias=qkv_bias)
+        self.qkv = mint.nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = Dropout(p=attn_drop)
-        self.proj = nn.Dense(dim, dim)
+        self.proj = mint.nn.Linear(dim, dim)
         self.proj_drop = Dropout(p=proj_drop)
 
     def construct(self, x: Tensor) -> Tensor:
         B, N, C = x.shape
         qkv = self.qkv(x)
         qkv = qkv.reshape(B, N, 3, self.num_heads, C // self.num_heads)
-        qkv = ops.transpose(qkv, (2, 0, 3, 1, 4))
+        qkv = mint.permute(qkv, (2, 0, 3, 1, 4))
         q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
 
-        batchmatual = ops.BatchMatMul(transpose_b=True)
+        batchmatual = ExtendBatchMatMul(transpose_b=True)
         attn = batchmatual(q, k) * self.scale
-        softmax = nn.Softmax()
+        softmax = mint.nn.Softmax()
         attn = softmax(attn)
         attn = self.attn_drop(attn)
 
-        batchmatual2 = ops.BatchMatMul()
+        batchmatual2 = ExtendBatchMatMul()
         x = batchmatual2(attn, v)
-        x = ops.transpose(x, (0, 2, 1, 3))
+        x = mint.permute(x, (0, 2, 1, 3))
         x = x.reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -85,7 +87,7 @@ class Attention(nn.Cell):
 class Block(nn.Cell):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+                 drop_path=0., act_layer=mint.nn.GELU, norm_layer=mint.nn.LayerNorm):
         super().__init__()
         self.norm1 = norm_layer((dim,))
         self.attn = Attention(dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
@@ -116,23 +118,22 @@ class PatchEmbed(nn.Cell):
         if multi_conv:
             if patch_size[0] == 12:
                 self.proj = nn.SequentialCell(
-                    nn.Conv2d(in_chans, embed_dim // 4, pad_mode='pad', kernel_size=7, stride=4, padding=3),
-                    nn.ReLU(),
-                    nn.Conv2d(embed_dim // 4, embed_dim // 2, pad_mode='pad', kernel_size=3, stride=3, padding=0),
-                    nn.ReLU(),
-                    nn.Conv2d(embed_dim // 2, embed_dim, pad_mode='pad', kernel_size=3, stride=1, padding=1),
+                    mint.nn.Conv2d(in_chans, embed_dim // 4, padding_mode='zeros', kernel_size=7, stride=4, padding=3),
+                    mint.nn.ReLU(),
+                    mint.nn.Conv2d(embed_dim // 4, embed_dim // 2, padding_mode='zeros', kernel_size=3, stride=3, padding=0),
+                    mint.nn.ReLU(),
+                    mint.nn.Conv2d(embed_dim // 2, embed_dim, padding_mode='zeros', kernel_size=3, stride=1, padding=1),
                 )
             elif patch_size[0] == 16:
                 self.proj = nn.SequentialCell(
-                    nn.Conv2d(in_chans, embed_dim // 4, pad_mode='pad', kernel_size=7, stride=4, padding=3),
-                    nn.ReLU(),
-                    nn.Conv2d(embed_dim // 4, embed_dim // 2, pad_mode='pad', kernel_size=3, stride=2, padding=1),
-                    nn.ReLU(),
-                    nn.Conv2d(embed_dim // 2, embed_dim, pad_mode='pad', kernel_size=3, stride=2, padding=1),
+                    mint.nn.Conv2d(in_chans, embed_dim // 4, padding_mode='zeros', kernel_size=7, stride=4, padding=3),
+                    mint.nn.ReLU(),
+                    mint.nn.Conv2d(embed_dim // 4, embed_dim // 2, padding_mode='zeros', kernel_size=3, stride=2, padding=1),
+                    mint.nn.ReLU(),
+                    mint.nn.Conv2d(embed_dim // 2, embed_dim, padding_mode='zeros', kernel_size=3, stride=2, padding=1),
                 )
         else:
-            self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, pad_mode='valid',
-                                  has_bias=True)
+            self.proj = mint.nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=True)
 
     def construct(self, x: Tensor) -> Tensor:
         B, C, H, W = x.shape
@@ -143,7 +144,7 @@ class PatchEmbed(nn.Cell):
         x = self.proj(x)
         B, C, H, W = x.shape
         x = x.reshape(B, C, H * W)
-        x = ops.transpose(x, (0, 2, 1))
+        x = mint.permute(x, (0, 2, 1))
         return x
 
 
@@ -155,32 +156,32 @@ class CrossAttention(nn.Cell):
         # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
         self.scale = qk_scale or head_dim ** -0.5
 
-        self.wq = nn.Dense(dim, dim, has_bias=qkv_bias)
-        self.wk = nn.Dense(dim, dim, has_bias=qkv_bias)
-        self.wv = nn.Dense(dim, dim, has_bias=qkv_bias)
+        self.wq = mint.nn.Linear(dim, dim, bias=qkv_bias)
+        self.wk = mint.nn.Linear(dim, dim, bias=qkv_bias)
+        self.wv = mint.nn.Linear(dim, dim, bias=qkv_bias)
         self.attn_drop = Dropout(p=attn_drop)
-        self.proj = nn.Dense(dim, dim)
+        self.proj = mint.nn.Linear(dim, dim)
         self.proj_drop = Dropout(p=proj_drop)
 
     def construct(self, x: Tensor) -> Tensor:
         B, N, C = x.shape  # 3,3,16
         q = self.wq(x[:, 0:1, ...]).reshape(B, 1, self.num_heads, C // self.num_heads)
-        q = ops.transpose(q, (0, 2, 1, 3))  # B1C -> B1H(C/H) -> BH1(C/H) 3 8 1 2
+        q = mint.permute(q, (0, 2, 1, 3))  # B1C -> B1H(C/H) -> BH1(C/H) 3 8 1 2
 
         k = self.wk(x).reshape(B, N, self.num_heads, C // self.num_heads)
-        k = ops.transpose(k, (0, 2, 1, 3))  # BNC -> BNH(C/H) -> BHN(C/H) 3832
+        k = mint.permute(k, (0, 2, 1, 3))  # BNC -> BNH(C/H) -> BHN(C/H) 3832
 
         v = self.wv(x).reshape(B, N, self.num_heads, C // self.num_heads)
-        v = ops.transpose(v, (0, 2, 1, 3))  # BNC -> BNH(C/H) -> BHN(C/H)3832
+        v = mint.permute(v, (0, 2, 1, 3))  # BNC -> BNH(C/H) -> BHN(C/H)3832
 
-        batchmatual = ops.BatchMatMul(transpose_b=True)
+        batchmatual = ExtendBatchMatMul(transpose_b=True)
         attn = batchmatual(q, k) * self.scale
-        softmax = nn.Softmax()
+        softmax = mint.nn.Softmax()
         attn = softmax(attn)
         attn = self.attn_drop(attn)
-        batchmatual2 = ops.BatchMatMul()
+        batchmatual2 = ExtendBatchMatMul()
         x = batchmatual2(attn, v)
-        x = ops.transpose(x, (0, 2, 1, 3))
+        x = mint.permute(x, (0, 2, 1, 3))
         x = x.reshape(B, 1, C)
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -191,7 +192,7 @@ class CrossAttention(nn.Cell):
 class CrossAttentionBlock(nn.Cell):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, has_mlp=True):
+                 drop_path=0., act_layer=mint.nn.GELU, norm_layer=mint.nn.LayerNorm, has_mlp=True):
         super().__init__()
 
         self.norm1 = norm_layer((dim,))
@@ -215,7 +216,7 @@ class CrossAttentionBlock(nn.Cell):
 
 class MultiScaleBlock(nn.Cell):
     def __init__(self, dim, patches, depth, num_heads, mlp_ratio, qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+                 drop_path=0., act_layer=mint.nn.GELU, norm_layer=mint.nn.LayerNorm):
         super().__init__()
 
         num_branches = len(dim)
@@ -239,7 +240,7 @@ class MultiScaleBlock(nn.Cell):
             if dim[d] == dim[(d + 1) % num_branches] and False:
                 tmp = [Identity()]
             else:
-                tmp = [norm_layer((dim[d],), epsilon=1e-6), act_layer(), nn.Dense(dim[d], dim[(d + 1) % num_branches])]
+                tmp = [norm_layer((dim[d],), eps=1e-6), act_layer(),  mint.nn.Linear(dim[d], dim[(d + 1) % num_branches])]
             projs.append(nn.SequentialCell(tmp))
         self.projs = nn.CellList(projs)
 
@@ -269,8 +270,8 @@ class MultiScaleBlock(nn.Cell):
             if dim[(d + 1) % num_branches] == dim[d] and False:
                 tmp = [Identity()]
             else:
-                tmp = [norm_layer((dim[(d + 1) % num_branches],), epsilon=1e-6), act_layer(),
-                       nn.Dense(dim[(d + 1) % num_branches], dim[d])]
+                tmp = [norm_layer((dim[(d + 1) % num_branches],), eps=1e-6), act_layer(),
+                       mint.nn.Linear(dim[(d + 1) % num_branches], dim[d])]
             revert_projs.append(nn.SequentialCell(tmp))
         self.revert_projs = nn.CellList(revert_projs)
 
@@ -290,11 +291,10 @@ class MultiScaleBlock(nn.Cell):
         for i in range(self.num_branches):
             a = proj_cls_token[i]
             b = outs_b[(i + 1) % self.num_branches][:, 1:, ...]
-            con = ops.Concat(1)
-            tmp = con((a, b))
+            tmp = mint.concat((a, b), dim=1)
             tmp = self.fusion[i](tmp)
             reverted_proj_cls_token = self.revert_projs[i](tmp[:, 0:1, ...])
-            tmp = con((reverted_proj_cls_token, outs_b[i][:, 1:, ...]))
+            tmp = mint.concat((reverted_proj_cls_token, outs_b[i][:, 1:, ...]), dim=1)
             outs.append(tmp)
         return outs
 
@@ -316,7 +316,7 @@ class VisionTransformer(nn.Cell):
                  depth=([1, 3, 1], [1, 3, 1], [1, 3, 1]),
                  num_heads=(6, 12), mlp_ratio=(2., 2., 4.), qkv_bias=False, qk_scale=None, drop_rate=0.,
                  attn_drop_rate=0.,
-                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, multi_conv=False):
+                 drop_path_rate=0., hybrid_backbone=None, norm_layer=mint.nn.LayerNorm, multi_conv=False):
         super().__init__()
 
         self.num_classes = num_classes
@@ -332,7 +332,8 @@ class VisionTransformer(nn.Cell):
         if hybrid_backbone is None:
             b = []
             for i in range(self.num_branches):
-                c = ms.Parameter(Tensor(np.zeros([1, 1 + num_patches[i], embed_dim[i]], np.float32)),
+
+                c = ms.Parameter(mint.zeros((1, 1 + num_patches[i], embed_dim[i]), dtype=ms.float32),
                                  name='pos_embed.' + str(i))
                 b.append(c)
             b = tuple(b)
@@ -344,7 +345,7 @@ class VisionTransformer(nn.Cell):
 
         d = []
         for i in range(self.num_branches):
-            c = ms.Parameter(Tensor(np.zeros([1, 1, embed_dim[i]], np.float32)), name='cls_token.' + str(i))
+            c = ms.Parameter(mint.zeros((1, 1, embed_dim[i]), dtype=ms.float32), name='cls_token.' + str(i))
             d.append(c)
         d = tuple(d)
         self.cls_token = ms.ParameterTuple(d)
@@ -364,8 +365,8 @@ class VisionTransformer(nn.Cell):
             dpr_ptr += curr_depth
             self.blocks.append(blk)
 
-        self.norm = nn.CellList([norm_layer((embed_dim[i],), epsilon=1e-6) for i in range(self.num_branches)])
-        self.head = nn.CellList([nn.Dense(embed_dim[i], num_classes) if num_classes > 0 else Identity() for i in
+        self.norm = nn.CellList([norm_layer((embed_dim[i],), eps=1e-6) for i in range(self.num_branches)])
+        self.head = nn.CellList([mint.nn.Linear(embed_dim[i], num_classes) if num_classes > 0 else Identity() for i in
                                  range(self.num_branches)])
 
         for i in range(self.num_branches):
@@ -379,7 +380,7 @@ class VisionTransformer(nn.Cell):
 
     def _initialize_weights(self) -> None:
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Dense):
+            if isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(init.initializer(init.TruncatedNormal(sigma=.02), cell.weight.data.shape))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
@@ -398,7 +399,7 @@ class VisionTransformer(nn.Cell):
 
     def reset_classifier(self, num_classes, global_pool=''):
         self.num_classes = num_classes
-        self.head = nn.Dense(self.embed_dim, num_classes) if num_classes > 0 else Identity()
+        self.head = mint.nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else Identity()
 
     def forward_features(self, x: Tensor) -> Tensor:
         B, C, H, W = x.shape
@@ -408,13 +409,12 @@ class VisionTransformer(nn.Cell):
             x_ = self.interpolate(x, size=(self.img_size[i], self.img_size[i])) if H != self.img_size[i] else x
             tmp = self.patch_embed[i](x_)
             z = self.cls_token[i].shape
-            y = Tensor(np.ones((B, z[1], z[2])), dtype=mstype.float32)
+            y = mint.ones((B, z[1], z[2]), dtype=mstype.float32)
             cls_tokens = self.cls_token[i]
             cls_tokens = cls_tokens.expand_as(y)  # stole cls_tokens impl from Phil Wang, thanks
-            con = ops.Concat(1)
             cls_tokens = cls_tokens.astype("float32")
             tmp = tmp.astype("float32")
-            tmp = con((cls_tokens, tmp))
+            tmp = mint.concat((cls_tokens, tmp), dim=1)
             tmp = tmp + self.pos_embed[i]
             tmp = self.pos_drop(tmp)
             xs.append(tmp)
@@ -440,7 +440,7 @@ class VisionTransformer(nn.Cell):
         for c in x:
             ce_logits.append(self.head[zz](c))
             zz = zz + 1
-        z = ops.stack([ce_logits[0], ce_logits[1]])
+        z = mint.stack([ce_logits[0], ce_logits[1]])
         op = ops.ReduceMean(keep_dims=False)
         ce_logits = op(z, 0)
         return ce_logits
@@ -456,7 +456,7 @@ def crossvit_9(pretrained: bool = False, num_classes: int = 1000, in_channels=3,
     model = VisionTransformer(img_size=[240, 224],
                               patch_size=[12, 16], embed_dim=[128, 256], depth=[[1, 3, 0], [1, 3, 0], [1, 3, 0]],
                               num_heads=[4, 4], mlp_ratio=[3, 3, 1], qkv_bias=True,
-                              norm_layer=nn.LayerNorm, in_channels=in_channels, num_classes=num_classes, **kwargs)
+                              norm_layer=mint.nn.LayerNorm, in_channels=in_channels, num_classes=num_classes, **kwargs)
     default_cfg = default_cfgs["crossvit_9"]
     if pretrained:
         load_pretrained(model, default_cfg, num_classes=num_classes, in_channels=in_channels)
@@ -468,7 +468,7 @@ def crossvit_15(pretrained: bool = False, num_classes: int = 1000, in_channels=3
     model = VisionTransformer(img_size=[240, 224],
                               patch_size=[12, 16], embed_dim=[192, 384], depth=[[1, 5, 0], [1, 5, 0], [1, 5, 0]],
                               num_heads=[6, 6], mlp_ratio=[3, 3, 1], qkv_bias=True,
-                              norm_layer=nn.LayerNorm, in_channels=in_channels, num_classes=num_classes, **kwargs)
+                              norm_layer=mint.nn.LayerNorm, in_channels=in_channels, num_classes=num_classes, **kwargs)
     default_cfg = default_cfgs["crossvit_15"]
     if pretrained:
         load_pretrained(model, default_cfg, num_classes=num_classes, in_channels=in_channels)
@@ -480,7 +480,7 @@ def crossvit_18(pretrained: bool = False, num_classes: int = 1000, in_channels=3
     model = VisionTransformer(img_size=[240, 224],
                               patch_size=[12, 16], embed_dim=[224, 448], depth=[[1, 6, 0], [1, 6, 0], [1, 6, 0]],
                               num_heads=[7, 7], mlp_ratio=[3, 3, 1], qkv_bias=True,
-                              norm_layer=nn.LayerNorm, in_channels=in_channels, num_classes=num_classes, **kwargs)
+                              norm_layer=mint.nn.LayerNorm, in_channels=in_channels, num_classes=num_classes, **kwargs)
     default_cfg = default_cfgs["crossvit_18"]
     if pretrained:
         load_pretrained(model, default_cfg, num_classes=num_classes, in_channels=in_channels)

@@ -4,19 +4,18 @@ Modified from timm/models/vision_transformer.py
 """
 from typing import Union
 
-import numpy as np
-
 import mindspore
 import mindspore.common.initializer as init
 import mindspore.nn as nn
-import mindspore.ops as ops
+import mindspore.mint as mint
 from mindspore import Tensor
 from mindspore.numpy import split
 
 from .helpers import load_pretrained
-from .layers.compatibility import Dropout, Interpolate
+from .layers.compatibility import Interpolate
 from .layers.drop_path import DropPath
 from .layers.identity import Identity
+from .layers.extend_bmm import ExtendBatchMatMul
 from .registry import register_model
 
 __all__ = [
@@ -68,10 +67,10 @@ class Mlp(nn.Cell):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1 = nn.Dense(in_channels=in_features, out_channels=hidden_features, has_bias=True)
-        self.act = nn.GELU(approximate=False)
-        self.fc2 = nn.Dense(in_channels=hidden_features, out_channels=out_features, has_bias=True)
-        self.drop = Dropout(p=drop)
+        self.fc1 = mint.nn.Linear(in_features=in_features, out_features=hidden_features, bias=True)
+        self.act = mint.nn.GELU()
+        self.fc2 = mint.nn.Linear(in_features=hidden_features, out_features=out_features, bias=True)
+        self.drop = mint.nn.Dropout(p=drop)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.fc1(x)
@@ -105,14 +104,14 @@ class ConvRelPosEnc(nn.Cell):
         for cur_window, cur_head_split in window.items():
             dilation = 1
             padding_size = (cur_window + (cur_window - 1) * (dilation - 1)) // 2
-            cur_conv = nn.Conv2d(in_channels=cur_head_split * Ch,
-                                 out_channels=cur_head_split * Ch,
-                                 kernel_size=(cur_window, cur_window),
-                                 padding=(padding_size, padding_size, padding_size, padding_size),
-                                 dilation=(dilation, dilation),
-                                 group=cur_head_split * Ch,
-                                 pad_mode='pad',
-                                 has_bias=True)
+            cur_conv = mint.nn.Conv2d(in_channels=cur_head_split * Ch,
+                                      out_channels=cur_head_split * Ch,
+                                      kernel_size=(cur_window, cur_window),
+                                      padding=padding_size,
+                                      dilation=(dilation, dilation),
+                                      groups=cur_head_split * Ch,
+                                      padding_mode='zeros',
+                                      bias=True)
             self.conv_list.append(cur_conv)
             self.head_splits.append(cur_head_split)
         self.channel_splits = [x * Ch for x in self.head_splits]
@@ -127,8 +126,8 @@ class ConvRelPosEnc(nn.Cell):
         q_img = q[:, :, 1:, :]
         v_img = v[:, :, 1:, :]
 
-        v_img = ops.transpose(v_img, (0, 1, 3, 2))
-        v_img = ops.reshape(v_img, (B, h * Ch, H, W))
+        v_img = mint.permute(v_img, (0, 1, 3, 2))
+        v_img = mint.reshape(v_img, (B, h * Ch, H, W))
 
         v_img_list = split(x=v_img, indices_or_sections=[self.idx1, self.idx2], axis=1)
 
@@ -137,13 +136,13 @@ class ConvRelPosEnc(nn.Cell):
         for conv in self.conv_list:
             conv_v_img_list.append(conv(v_img_list[i]))
             i = i + 1
-        conv_v_img = ops.concat(conv_v_img_list, axis=1)
-        conv_v_img = ops.reshape(conv_v_img, (B, h, Ch, H * W))
-        conv_v_img = ops.transpose(conv_v_img, (0, 1, 3, 2))
+        conv_v_img = mint.concat(conv_v_img_list, dim=1)
+        conv_v_img = mint.reshape(conv_v_img, (B, h, Ch, H * W))
+        conv_v_img = mint.permute(conv_v_img, (0, 1, 3, 2))
 
         EV_hat_img = q_img * conv_v_img
-        zero = ops.Zeros()((B, h, 1, Ch), q.dtype)
-        EV_hat = ops.concat((zero, EV_hat_img), axis=2)
+        zero = mint.zeros((B, h, 1, Ch), dtype=q.dtype)
+        EV_hat = mint.concat((zero, EV_hat_img), dim=2)
         return EV_hat
 
 
@@ -164,25 +163,25 @@ class FactorAtt_ConvRelPosEnc(nn.Cell):
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
 
-        self.q = nn.Dense(in_channels=dim, out_channels=dim, has_bias=qkv_bias)
-        self.k = nn.Dense(in_channels=dim, out_channels=dim, has_bias=qkv_bias)
-        self.v = nn.Dense(in_channels=dim, out_channels=dim, has_bias=qkv_bias)
-        self.attn_drop = Dropout(p=attn_drop)
-        self.proj = nn.Dense(dim, dim)
-        self.proj_drop = Dropout(p=proj_drop)
-        self.softmax = nn.Softmax(axis=-1)
-        self.batch_matmul = ops.BatchMatMul()
+        self.q = mint.nn.Linear(in_features=dim, out_features=dim, bias=qkv_bias)
+        self.k = mint.nn.Linear(in_features=dim, out_features=dim, bias=qkv_bias)
+        self.v = mint.nn.Linear(in_features=dim, out_features=dim, bias=qkv_bias)
+        self.attn_drop = mint.nn.Dropout(p=attn_drop)
+        self.proj = mint.nn.Linear(dim, dim)
+        self.proj_drop = mint.nn.Dropout(p=proj_drop)
+        self.softmax = mint.nn.Softmax(dim=-1)
+        self.batch_matmul = ExtendBatchMatMul()
 
         self.crpe = shared_crpe
 
     def construct(self, x, size) -> Tensor:
         B, N, C = x.shape
-        q = ops.reshape(self.q(x), (B, N, self.num_heads, C // self.num_heads))
-        q = ops.transpose(q, (0, 2, 1, 3))
-        k = ops.reshape(self.k(x), (B, N, self.num_heads, C // self.num_heads))
-        k = ops.transpose(k, (0, 2, 3, 1))
-        v = ops.reshape(self.v(x), (B, N, self.num_heads, C // self.num_heads))
-        v = ops.transpose(v, (0, 2, 1, 3))
+        q = mint.reshape(self.q(x), (B, N, self.num_heads, C // self.num_heads))
+        q = mint.permute(q, (0, 2, 1, 3))
+        k = mint.reshape(self.k(x), (B, N, self.num_heads, C // self.num_heads))
+        k = mint.permute(k, (0, 2, 3, 1))
+        v = mint.reshape(self.v(x), (B, N, self.num_heads, C // self.num_heads))
+        v = mint.permute(v, (0, 2, 1, 3))
 
         k_softmax = self.softmax(k)
         factor_att = self.batch_matmul(q, k_softmax)
@@ -190,10 +189,10 @@ class FactorAtt_ConvRelPosEnc(nn.Cell):
 
         crpe = self.crpe(q, v, size=size)
 
-        x = ops.mul(self.scale, factor_att)
-        x = ops.add(x, crpe)
-        x = ops.transpose(x, (0, 2, 1, 3))
-        x = ops.reshape(x, (B, N, C))
+        x = mint.mul(self.scale, factor_att)
+        x = mint.add(x, crpe)
+        x = mint.permute(x, (0, 2, 1, 3))
+        x = mint.reshape(x, (B, N, C))
 
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -211,14 +210,14 @@ class ConvPosEnc(nn.Cell):
         k=3
     ) -> None:
         super(ConvPosEnc, self).__init__()
-        self.proj = nn.Conv2d(in_channels=dim,
-                              out_channels=dim,
-                              kernel_size=k,
-                              stride=1,
-                              padding=k // 2,
-                              group=dim,
-                              pad_mode='pad',
-                              has_bias=True)
+        self.proj = mint.nn.Conv2d(in_channels=dim,
+                                   out_channels=dim,
+                                   kernel_size=k,
+                                   stride=1,
+                                   padding=k // 2,
+                                   groups=dim,
+                                   padding_mode='zeros',
+                                   bias=True)
 
     def construct(self, x, size) -> Tensor:
         B, N, C = x.shape
@@ -226,14 +225,14 @@ class ConvPosEnc(nn.Cell):
 
         cls_token, img_tokens = x[:, :1], x[:, 1:]
 
-        feat = ops.transpose(img_tokens, (0, 2, 1))
-        feat = ops.reshape(feat, (B, C, H, W))
-        x = ops.add(self.proj(feat), feat)
+        feat = mint.permute(img_tokens, (0, 2, 1))
+        feat = mint.reshape(feat, (B, C, H, W))
+        x = mint.add(self.proj(feat), feat)
 
-        x = ops.reshape(x, (B, C, H * W))
-        x = ops.transpose(x, (0, 2, 1))
+        x = mint.reshape(x, (B, C, H * W))
+        x = mint.permute(x, (0, 2, 1))
 
-        x = ops.concat((cls_token, x), axis=1)
+        x = mint.concat((cls_token, x), dim=1)
         return x
 
 
@@ -259,7 +258,7 @@ class SerialBlock(nn.Cell):
 
         self.cpe = shared_cpe
 
-        self.norm1 = nn.LayerNorm((dim,), epsilon=1e-6)
+        self.norm1 = mint.nn.LayerNorm((dim,), eps=1e-6)
         self.factoratt_crpe = FactorAtt_ConvRelPosEnc(dim,
                                                       num_heads=num_heads,
                                                       qkv_bias=qkv_bias,
@@ -269,7 +268,7 @@ class SerialBlock(nn.Cell):
                                                       )
         self.drop_path = DropPath(drop_path) if drop_path > 0. else Identity()
 
-        self.norm2 = nn.LayerNorm((dim,), epsilon=1e-6)
+        self.norm2 = mint.nn.LayerNorm((dim,), eps=1e-6)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, drop=drop)
 
@@ -298,9 +297,9 @@ class ParallelBlock(nn.Cell):
 
         self.cpes = shared_cpes
 
-        self.norm12 = nn.LayerNorm((dims[1],), epsilon=1e-6)
-        self.norm13 = nn.LayerNorm((dims[2],), epsilon=1e-6)
-        self.norm14 = nn.LayerNorm((dims[3],), epsilon=1e-6)
+        self.norm12 = mint.nn.LayerNorm((dims[1],), eps=1e-6)
+        self.norm13 = mint.nn.LayerNorm((dims[2],), eps=1e-6)
+        self.norm14 = mint.nn.LayerNorm((dims[3],), eps=1e-6)
         self.factoratt_crpe2 = FactorAtt_ConvRelPosEnc(dims[1],
                                                        num_heads=num_heads,
                                                        qkv_bias=qkv_bias,
@@ -325,9 +324,9 @@ class ParallelBlock(nn.Cell):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else Identity()
         self.interpolate_fn = Interpolate(mode="bilinear", align_corners=True)
 
-        self.norm22 = nn.LayerNorm((dims[1],), epsilon=1e-6)
-        self.norm23 = nn.LayerNorm((dims[2],), epsilon=1e-6)
-        self.norm24 = nn.LayerNorm((dims[3],), epsilon=1e-6)
+        self.norm22 = mint.nn.LayerNorm((dims[1],), eps=1e-6)
+        self.norm23 = mint.nn.LayerNorm((dims[2],), eps=1e-6)
+        self.norm24 = mint.nn.LayerNorm((dims[3],), eps=1e-6)
 
         mlp_hidden_dim = int(dims[1] * mlp_ratios[1])
         self.mlp2 = self.mlp3 = self.mlp4 = Mlp(in_features=dims[1], hidden_features=mlp_hidden_dim, drop=drop)
@@ -348,13 +347,13 @@ class ParallelBlock(nn.Cell):
         cls_token = x[:, :1, :]
         img_tokens = x[:, 1:, :]
 
-        img_tokens = ops.transpose(img_tokens, (0, 2, 1))
-        img_tokens = ops.reshape(img_tokens, (B, C, H, W))
+        img_tokens = mint.permute(img_tokens, (0, 2, 1))
+        img_tokens = mint.reshape(img_tokens, (B, C, H, W))
         img_tokens = self.interpolate_fn(img_tokens, size=output_size)
-        img_tokens = ops.reshape(img_tokens, (B, C, -1))
-        img_tokens = ops.transpose(img_tokens, (0, 2, 1))
+        img_tokens = mint.reshape(img_tokens, (B, C, -1))
+        img_tokens = mint.permute(img_tokens, (0, 2, 1))
 
-        out = ops.concat((cls_token, img_tokens), axis=1)
+        out = mint.concat((cls_token, img_tokens), dim=1)
         return out
 
     def construct(self, x1, x2, x3, x4, sizes) -> tuple:
@@ -420,20 +419,19 @@ class PatchEmbed(nn.Cell):
         self.in_chans = in_chans
         self.embed_dim = embed_dim
 
-        self.proj = nn.Conv2d(in_channels=in_chans,
-                              out_channels=embed_dim,
-                              kernel_size=patch_size,
-                              stride=patch_size,
-                              pad_mode='valid',
-                              has_bias=True)
+        self.proj = mint.nn.Conv2d(in_channels=in_chans,
+                                   out_channels=embed_dim,
+                                   kernel_size=patch_size,
+                                   stride=patch_size,
+                                   bias=True)
 
-        self.norm = nn.LayerNorm((embed_dim,), epsilon=1e-5)
+        self.norm = mint.nn.LayerNorm((embed_dim,), eps=1e-5)
 
     def construct(self, x: Tensor) -> Tensor:
         B = x.shape[0]
 
-        x = ops.reshape(self.proj(x), (B, self.embed_dim, -1))
-        x = ops.transpose(x, (0, 2, 1))
+        x = mint.reshape(self.proj(x), (B, self.embed_dim, -1))
+        x = mint.permute(x, (0, 2, 1))
         x = self.norm(x)
 
         return x
@@ -476,10 +474,10 @@ class CoaT(nn.Cell):
         self.patch_embed4 = PatchEmbed(image_size=image_size // (2**4), patch_size=2,
                                        in_chans=embed_dims[2], embed_dim=embed_dims[3])
 
-        self.cls_token1 = mindspore.Parameter(ops.Zeros()((1, 1, embed_dims[0]), mindspore.float32))
-        self.cls_token2 = mindspore.Parameter(ops.Zeros()((1, 1, embed_dims[1]), mindspore.float32))
-        self.cls_token3 = mindspore.Parameter(ops.Zeros()((1, 1, embed_dims[2]), mindspore.float32))
-        self.cls_token4 = mindspore.Parameter(ops.Zeros()((1, 1, embed_dims[3]), mindspore.float32))
+        self.cls_token1 = mindspore.Parameter(mint.zeros((1, 1, embed_dims[0]), dtype=mindspore.float32))
+        self.cls_token2 = mindspore.Parameter(mint.zeros((1, 1, embed_dims[1]), dtype=mindspore.float32))
+        self.cls_token3 = mindspore.Parameter(mint.zeros((1, 1, embed_dims[2]), dtype=mindspore.float32))
+        self.cls_token4 = mindspore.Parameter(mint.zeros((1, 1, embed_dims[3]), dtype=mindspore.float32))
 
         self.cpe1 = ConvPosEnc(dim=embed_dims[0], k=3)
         self.cpe2 = ConvPosEnc(dim=embed_dims[1], k=3)
@@ -549,23 +547,23 @@ class CoaT(nn.Cell):
 
         if not self.return_interm_layers:
             if self.parallel_blocks is not None:
-                self.norm2 = nn.LayerNorm((embed_dims[1],), epsilon=1e-6)
-                self.norm3 = nn.LayerNorm((embed_dims[2],), epsilon=1e-6)
+                self.norm2 = mint.nn.LayerNorm((embed_dims[1],), eps=1e-6)
+                self.norm3 = mint.nn.LayerNorm((embed_dims[2],), eps=1e-6)
             else:
                 self.norm2 = None
                 self.norm3 = None
 
-            self.norm4 = nn.LayerNorm((embed_dims[3],), epsilon=1e-6)
+            self.norm4 = mint.nn.LayerNorm((embed_dims[3],), eps=1e-6)
 
             if self.parallel_depth > 0:
                 self.aggregate = nn.Conv1d(in_channels=3,
                                            out_channels=1,
                                            kernel_size=1,
                                            has_bias=True)
-                self.head = nn.Dense(embed_dims[3], num_classes) if num_classes > 0 else Identity()
+                self.head = mint.nn.Linear(embed_dims[3], num_classes) if num_classes > 0 else Identity()
             else:
                 self.aggregate = None
-                self.head = nn.Dense(embed_dims[3], num_classes) if num_classes > 0 else Identity()
+                self.head = mint.nn.Linear(embed_dims[3], num_classes) if num_classes > 0 else Identity()
 
         self.cls_token1.set_data(init.initializer(init.TruncatedNormal(sigma=.02), self.cls_token1.data.shape))
         self.cls_token2.set_data(init.initializer(init.TruncatedNormal(sigma=.02), self.cls_token2.data.shape))
@@ -575,22 +573,22 @@ class CoaT(nn.Cell):
 
     def _initialize_weights(self) -> None:
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Dense):
+            if isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(init.initializer(init.TruncatedNormal(sigma=.02), cell.weight.data.shape))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
-            elif isinstance(cell, nn.LayerNorm):
-                cell.gamma.set_data(init.initializer(init.Constant(1.0), cell.gamma.shape))
-                cell.beta.set_data(init.initializer(init.Constant(0), cell.beta.shape))
+            elif isinstance(cell, mint.nn.LayerNorm):
+                cell.weight.set_data(init.initializer(init.Constant(1.0), cell.weight.shape))
+                cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
 
     def insert_cls(self, x, cls_token) -> Tensor:
         t0 = x.shape[0]
         t1 = cls_token.shape[1]
         t2 = cls_token.shape[2]
-        y = Tensor(np.ones((t0, t1, t2)))
+        y = mint.ones((t0, t1, t2), dtype=x.dtype)
         cls_tokens = cls_token.expand_as(y)
 
-        x = ops.concat((cls_tokens, x), axis=1)
+        x = mint.concat((cls_tokens, x), dim=1)
         return x
 
     def remove_cls(self, x: Tensor) -> Tensor:
@@ -605,8 +603,8 @@ class CoaT(nn.Cell):
         for blk in self.serial_blocks1:
             x1 = blk(x1, size=(H1, W1))
         x1_nocls = self.remove_cls(x1)
-        x1_nocls = ops.reshape(x1_nocls, (B, H1, W1, -1))
-        x1_nocls = ops.transpose(x1_nocls, (0, 3, 1, 2))
+        x1_nocls = mint.reshape(x1_nocls, (B, H1, W1, -1))
+        x1_nocls = mint.permute(x1_nocls, (0, 3, 1, 2))
 
         x2 = self.patch_embed2(x1_nocls)
         H2, W2 = self.patch_embed2.patches_resolution
@@ -614,8 +612,8 @@ class CoaT(nn.Cell):
         for blk in self.serial_blocks2:
             x2 = blk(x2, size=(H2, W2))
         x2_nocls = self.remove_cls(x2)
-        x2_nocls = ops.reshape(x2_nocls, (B, H2, W2, -1))
-        x2_nocls = ops.transpose(x2_nocls, (0, 3, 1, 2))
+        x2_nocls = mint.reshape(x2_nocls, (B, H2, W2, -1))
+        x2_nocls = mint.permute(x2_nocls, (0, 3, 1, 2))
 
         x3 = self.patch_embed3(x2_nocls)
         H3, W3 = self.patch_embed3.patches_resolution
@@ -623,8 +621,8 @@ class CoaT(nn.Cell):
         for blk in self.serial_blocks3:
             x3 = blk(x3, size=(H3, W3))
         x3_nocls = self.remove_cls(x3)
-        x3_nocls = ops.reshape(x3_nocls, (B, H3, W3, -1))
-        x3_nocls = ops.transpose(x3_nocls, (0, 3, 1, 2))
+        x3_nocls = mint.reshape(x3_nocls, (B, H3, W3, -1))
+        x3_nocls = mint.permute(x3_nocls, (0, 3, 1, 2))
 
         x4 = self.patch_embed4(x3_nocls)
         H4, W4 = self.patch_embed4.patches_resolution
@@ -632,8 +630,8 @@ class CoaT(nn.Cell):
         for blk in self.serial_blocks4:
             x4 = blk(x4, size=(H4, W4))
         x4_nocls = self.remove_cls(x4)
-        x4_nocls = ops.reshape(x4_nocls, (B, H4, W4, -1))
-        x4_nocls = ops.transpose(x4_nocls, (0, 3, 1, 2))
+        x4_nocls = mint.reshape(x4_nocls, (B, H4, W4, -1))
+        x4_nocls = mint.permute(x4_nocls, (0, 3, 1, 2))
 
         if self.parallel_depth == 0:
             if self.return_interm_layers:
@@ -677,7 +675,7 @@ class CoaT(nn.Cell):
             x2_cls = x2[:, :1]
             x3_cls = x3[:, :1]
             x4_cls = x4[:, :1]
-            merged_cls = ops.concat((x2_cls, x3_cls, x4_cls), axis=1)
+            merged_cls = mint.concat((x2_cls, x3_cls, x4_cls), dim=1)
             merged_cls = self.aggregate(merged_cls).squeeze(axis=1)
             return merged_cls
 

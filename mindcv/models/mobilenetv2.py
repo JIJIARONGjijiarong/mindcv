@@ -6,7 +6,7 @@ Refer to MobileNetV2: Inverted Residuals and Linear Bottlenecks.
 import math
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn
+from mindspore import Tensor, nn, mint
 
 from .helpers import build_model_with_cfg, make_divisible
 from .layers.compatibility import Dropout
@@ -139,18 +139,18 @@ class InvertedResidual(nn.Cell):
         if expand_ratio != 1:
             # pw
             layers.extend([
-                nn.Conv2d(in_channels, hidden_dim, 1, 1, pad_mode="pad", padding=0, has_bias=False),
-                nn.BatchNorm2d(hidden_dim),
+                mint.nn.Conv2d(in_channels, hidden_dim, 1, 1, padding=0, bias=False),
+                mint.nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6()
             ])
         layers.extend([
             # dw
-            nn.Conv2d(hidden_dim, hidden_dim, 3, stride, pad_mode="pad", padding=1, group=hidden_dim, has_bias=False),
+            mint.nn.Conv2d(hidden_dim, hidden_dim, 3, stride, padding=1, groups=hidden_dim, bias=False),
             nn.BatchNorm2d(hidden_dim),
             nn.ReLU6(),
             # pw-linear
-            nn.Conv2d(hidden_dim, out_channels, 1, 1, pad_mode="pad", padding=0, has_bias=False),
-            nn.BatchNorm2d(out_channels),
+            mint.nn.Conv2d(hidden_dim, out_channels, 1, 1, bias=False),
+            mint.nn.BatchNorm2d(out_channels),
         ])
         self.layers = nn.SequentialCell(layers)
 
@@ -199,7 +199,7 @@ class MobileNetV2(nn.Cell):
 
         # Building stem conv layer.
         features = [
-            nn.Conv2d(in_channels, input_channels, 3, 2, pad_mode="pad", padding=1, has_bias=False),
+            mint.nn.Conv2d(in_channels, input_channels, 3, 2, padding=1, bias=False),
             nn.BatchNorm2d(input_channels),
             nn.ReLU6(),
         ]
@@ -224,7 +224,7 @@ class MobileNetV2(nn.Cell):
 
         # Building last point-wise layers.
         features.extend([
-            nn.Conv2d(input_channels, last_channels, 1, 1, pad_mode="pad", padding=0, has_bias=False),
+            mint.nn.Conv2d(input_channels, last_channels, 1, 1, padding=0, bias=False),
             nn.BatchNorm2d(last_channels),
             nn.ReLU6(),
         ])

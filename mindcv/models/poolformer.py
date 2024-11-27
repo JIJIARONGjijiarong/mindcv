@@ -10,7 +10,7 @@ import numpy as np
 
 import mindspore
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, ops, mint
 
 from .helpers import load_pretrained
 from .layers import DropPath, Identity
@@ -64,31 +64,32 @@ class ConvMlp(nn.Cell):
     """MLP using 1x1 convs that keeps spatial dims"""
 
     def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        norm_layer=None,
-        bias=True,
-        drop=0.0,
+            self,
+            in_features,
+            hidden_features=None,
+            out_features=None,
+            act_layer=nn.GELU,
+            norm_layer=None,
+            bias=True,
+            drop=0.0,
     ):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
         bias = to_2tuple(bias)
 
-        self.fc1 = nn.Conv2d(in_features, hidden_features, kernel_size=1, has_bias=bias[0])
+        self.fc1 = mint.nn.Conv2d(in_features, hidden_features, kernel_size=1, bias=bias[0])
         self.norm = norm_layer(hidden_features) if norm_layer else Identity()
-        self.act = act_layer(approximate=False)
+        # 应为 self.act = act_layer(approximate=False)
+        self.act = act_layer()
         self.drop = Dropout(p=drop)
-        self.fc2 = nn.Conv2d(hidden_features, out_features, kernel_size=1, has_bias=bias[1])
+        self.fc2 = mint.nn.Conv2d(hidden_features, out_features, kernel_size=1, bias=bias[1])
         self.cls_init_weights()
 
     def cls_init_weights(self):
         """Initialize weights for cells."""
         for name, m in self.cells_and_names():
-            if isinstance(m, nn.Conv2d):
+            if isinstance(m, mint.nn.Conv2d):
                 m.weight.set_data(
                     init.initializer(init.TruncatedNormal(sigma=.02), m.weight.shape, m.weight.dtype))
                 if m.bias is not None:
@@ -114,8 +115,8 @@ class PatchEmbed(nn.Cell):
         patch_size = to_2tuple(patch_size)
         stride = to_2tuple(stride)
         # padding = to_2tuple(padding)
-        self.proj = nn.Conv2d(in_chs, embed_dim, kernel_size=patch_size, stride=stride, padding=padding, pad_mode="pad",
-                              has_bias=True)
+        self.proj = mint.nn.Conv2d(in_chs, embed_dim, kernel_size=patch_size, stride=stride, padding=padding,
+                                   bias=True)
         self.norm = norm_layer(embed_dim) if norm_layer else Identity()
 
     def construct(self, x):
@@ -127,6 +128,8 @@ class PatchEmbed(nn.Cell):
 class Pooling(nn.Cell):
     def __init__(self, pool_size=3):
         super().__init__()
+        # self.pool = mint.nn.AvgPool2d(pool_size, stride=1, padding=pool_size // 2, count_include_pad=False)
+
         self.pool = nn.AvgPool2d(pool_size, stride=1, pad_mode="same")
 
     def construct(self, x):
@@ -141,7 +144,7 @@ class PoolFormerBlock(nn.Cell):
         dim,
         pool_size=3,
         mlp_ratio=4.0,
-        act_layer=nn.GELU,
+        act_layer=mint.nn.GELU,
         norm_layer=nn.GroupNorm,
         drop=0.0,
         drop_path=0.0,
@@ -181,7 +184,7 @@ def basic_blocks(
     layers,
     pool_size=3,
     mlp_ratio=4.0,
-    act_layer=nn.GELU,
+    act_layer=mint.nn.GELU,
     norm_layer=nn.GroupNorm,
     drop_rate=0.0,
     drop_path_rate=0.0,
@@ -215,7 +218,7 @@ class PoolFormer(nn.Cell):
         num_classes: number of classes for the image classification. Default: 1000
         global_pool: define the types of pooling layer. Default: avg
         norm_layer: define the types of normalization. Default: nn.GroupNorm
-        act_layer: define the types of activation. Default: nn.GELU
+        act_layer: define the types of activation. Default: mint.nn.GELU
         in_patch_size: specify the patch embedding for the input image. Default: 7
         in_stride: specify the stride for the input image. Default: 4.
         in_pad: specify the pad for the input image. Default: 2.
@@ -239,7 +242,7 @@ class PoolFormer(nn.Cell):
         num_classes=1000,
         global_pool="avg",
         norm_layer=nn.GroupNorm,
-        act_layer=nn.GELU,
+        act_layer=mint.nn.GELU,
         in_patch_size=7,
         in_stride=4,
         in_pad=2,
@@ -284,14 +287,14 @@ class PoolFormer(nn.Cell):
 
         self.network = nn.SequentialCell(*network)
         self.norm = norm_layer(1, embed_dims[-1])
-        self.head = nn.Dense(embed_dims[-1], num_classes, has_bias=True) if num_classes > 0 else Identity()
+        self.head = mint.nn.Linear(embed_dims[-1], num_classes, bias=True) if num_classes > 0 else Identity()
         # self._initialize_weights()
         self.cls_init_weights()
 
     def cls_init_weights(self):
         """Initialize weights for cells."""
         for name, m in self.cells_and_names():
-            if isinstance(m, nn.Dense):
+            if isinstance(m, mint.nn.Linear):
                 m.weight.set_data(
                     init.initializer(init.TruncatedNormal(sigma=.02), m.weight.shape, m.weight.dtype))
                 if m.bias is not None:
@@ -302,7 +305,7 @@ class PoolFormer(nn.Cell):
         self.num_classes = num_classes
         if global_pool is not None:
             self.global_pool = global_pool
-        self.head = nn.Dense(self.num_features, num_classes) if num_classes > 0 else Identity()
+        self.head = mint.nn.Linear(self.num_features, num_classes) if num_classes > 0 else Identity()
 
     def forward_features(self, x: Tensor) -> Tensor:
         x = self.patch_embed(x)

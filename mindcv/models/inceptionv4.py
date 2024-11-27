@@ -6,7 +6,7 @@ Refer to Inception-v4, Inception-ResNet and the Impact of Residual Connections o
 from typing import Tuple, Union
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained
 from .layers.compatibility import Dropout
@@ -43,14 +43,12 @@ class BasicConv2d(nn.Cell):
         out_channels: int,
         kernel_size: Union[int, Tuple] = 1,
         stride: int = 1,
-        padding: int = 0,
-        pad_mode: str = "same",
+        padding: Union[int, Tuple] = 0,
     ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride,
-                              padding=padding, pad_mode=pad_mode)
-        self.bn = nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.9997)
-        self.relu = nn.ReLU()
+        self.conv = mint.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding=padding, bias=False)
+        self.bn = mint.nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.9997)
+        self.relu = mint.nn.ReLU()
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.conv(x)
@@ -64,27 +62,27 @@ class Stem(nn.Cell):
 
     def __init__(self, in_channels: int) -> None:
         super().__init__()
-        self.conv2d_1a_3x3 = BasicConv2d(in_channels, 32, kernel_size=3, stride=2, pad_mode="valid")
-        self.conv2d_2a_3x3 = BasicConv2d(32, 32, kernel_size=3, stride=1, pad_mode="valid")
-        self.conv2d_2b_3x3 = BasicConv2d(32, 64, kernel_size=3, stride=1, pad_mode="pad", padding=1)
+        self.conv2d_1a_3x3 = BasicConv2d(in_channels, 32, kernel_size=3, stride=2)
+        self.conv2d_2a_3x3 = BasicConv2d(32, 32, kernel_size=3, stride=1)
+        self.conv2d_2b_3x3 = BasicConv2d(32, 64, kernel_size=3, stride=1, padding=1)
 
-        self.mixed_3a_branch_0 = nn.MaxPool2d(3, stride=2)
-        self.mixed_3a_branch_1 = BasicConv2d(64, 96, kernel_size=3, stride=2, pad_mode="valid")
+        self.mixed_3a_branch_0 = mint.nn.MaxPool2d(3, stride=2)
+        self.mixed_3a_branch_1 = BasicConv2d(64, 96, kernel_size=3, stride=2)
 
         self.mixed_4a_branch_0 = nn.SequentialCell([
             BasicConv2d(160, 64, kernel_size=1, stride=1),
-            BasicConv2d(64, 96, kernel_size=3, stride=1, pad_mode="valid")
+            BasicConv2d(64, 96, kernel_size=3, stride=1)
         ])
 
         self.mixed_4a_branch_1 = nn.SequentialCell([
             BasicConv2d(160, 64, kernel_size=1, stride=1),
-            BasicConv2d(64, 64, kernel_size=(1, 7), stride=1),
-            BasicConv2d(64, 64, kernel_size=(7, 1), stride=1),
-            BasicConv2d(64, 96, kernel_size=3, stride=1, pad_mode="valid")
+            BasicConv2d(64, 64, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(64, 64, kernel_size=(7, 1), stride=1, padding=(3, 0)),
+            BasicConv2d(64, 96, kernel_size=3, stride=1)
         ])
 
-        self.mixed_5a_branch_0 = BasicConv2d(192, 192, kernel_size=3, stride=2, pad_mode="valid")
-        self.mixed_5a_branch_1 = nn.MaxPool2d(3, stride=2)
+        self.mixed_5a_branch_0 = BasicConv2d(192, 192, kernel_size=3, stride=2)
+        self.mixed_5a_branch_1 = mint.nn.MaxPool2d(3, stride=2)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.conv2d_1a_3x3(x)  # 149 x 149 x 32
@@ -93,15 +91,15 @@ class Stem(nn.Cell):
 
         x0 = self.mixed_3a_branch_0(x)
         x1 = self.mixed_3a_branch_1(x)
-        x = ops.concat((x0, x1), axis=1)  # 73 x 73 x 160
+        x = mint.concat((x0, x1), dim=1)  # 73 x 73 x 160
 
         x0 = self.mixed_4a_branch_0(x)
         x1 = self.mixed_4a_branch_1(x)
-        x = ops.concat((x0, x1), axis=1)  # 71 x 71 x 192
+        x = mint.concat((x0, x1), dim=1)  # 71 x 71 x 192
 
         x0 = self.mixed_5a_branch_0(x)
         x1 = self.mixed_5a_branch_1(x)
-        x = ops.concat((x0, x1), axis=1)  # 35 x 35 x 384
+        x = mint.concat((x0, x1), dim=1)  # 35 x 35 x 384
         return x
 
 
@@ -113,15 +111,15 @@ class InceptionA(nn.Cell):
         self.branch_0 = BasicConv2d(384, 96, kernel_size=1, stride=1)
         self.branch_1 = nn.SequentialCell([
             BasicConv2d(384, 64, kernel_size=1, stride=1),
-            BasicConv2d(64, 96, kernel_size=3, stride=1, pad_mode="pad", padding=1)
+            BasicConv2d(64, 96, kernel_size=3, stride=1, padding=1)
         ])
         self.branch_2 = nn.SequentialCell([
             BasicConv2d(384, 64, kernel_size=1, stride=1),
-            BasicConv2d(64, 96, kernel_size=3, stride=1, pad_mode="pad", padding=1),
-            BasicConv2d(96, 96, kernel_size=3, stride=1, pad_mode="pad", padding=1)
+            BasicConv2d(64, 96, kernel_size=3, stride=1, padding=1),
+            BasicConv2d(96, 96, kernel_size=3, stride=1, padding=1)
         ])
         self.branch_3 = nn.SequentialCell([
-            nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same"),
+            mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1),
             BasicConv2d(384, 96, kernel_size=1, stride=1)
         ])
 
@@ -130,7 +128,7 @@ class InceptionA(nn.Cell):
         x1 = self.branch_1(x)
         x2 = self.branch_2(x)
         x3 = self.branch_3(x)
-        x4 = ops.concat((x0, x1, x2, x3), axis=1)
+        x4 = mint.concat((x0, x1, x2, x3), dim=1)
         return x4
 
 
@@ -142,18 +140,18 @@ class InceptionB(nn.Cell):
         self.branch_0 = BasicConv2d(1024, 384, kernel_size=1, stride=1)
         self.branch_1 = nn.SequentialCell([
             BasicConv2d(1024, 192, kernel_size=1, stride=1),
-            BasicConv2d(192, 224, kernel_size=(1, 7), stride=1),
-            BasicConv2d(224, 256, kernel_size=(7, 1), stride=1),
+            BasicConv2d(192, 224, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(224, 256, kernel_size=(7, 1), stride=1, padding=(3, 0)),
         ])
         self.branch_2 = nn.SequentialCell([
             BasicConv2d(1024, 192, kernel_size=1, stride=1),
-            BasicConv2d(192, 192, kernel_size=(7, 1), stride=1),
-            BasicConv2d(192, 224, kernel_size=(1, 7), stride=1),
-            BasicConv2d(224, 224, kernel_size=(7, 1), stride=1),
-            BasicConv2d(224, 256, kernel_size=(1, 7), stride=1)
+            BasicConv2d(192, 192, kernel_size=(7, 1), stride=1, padding=(3, 0)),
+            BasicConv2d(192, 224, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(224, 224, kernel_size=(7, 1), stride=1, padding=(3, 0)),
+            BasicConv2d(224, 256, kernel_size=(1, 7), stride=1, padding=(0, 3))
         ])
         self.branch_3 = nn.SequentialCell([
-            nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same"),
+            mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1),
             BasicConv2d(1024, 128, kernel_size=1, stride=1)
         ])
 
@@ -162,7 +160,7 @@ class InceptionB(nn.Cell):
         x1 = self.branch_1(x)
         x2 = self.branch_2(x)
         x3 = self.branch_3(x)
-        x4 = ops.concat((x0, x1, x2, x3), axis=1)
+        x4 = mint.concat((x0, x1, x2, x3), dim=1)
         return x4
 
 
@@ -171,19 +169,19 @@ class ReductionA(nn.Cell):
 
     def __init__(self) -> None:
         super().__init__()
-        self.branch_0 = BasicConv2d(384, 384, kernel_size=3, stride=2, pad_mode="valid")
+        self.branch_0 = BasicConv2d(384, 384, kernel_size=3, stride=2)
         self.branch_1 = nn.SequentialCell([
             BasicConv2d(384, 192, kernel_size=1, stride=1),
-            BasicConv2d(192, 224, kernel_size=3, stride=1, pad_mode="pad", padding=1),
-            BasicConv2d(224, 256, kernel_size=3, stride=2, pad_mode="valid"),
+            BasicConv2d(192, 224, kernel_size=3, stride=1, padding=1),
+            BasicConv2d(224, 256, kernel_size=3, stride=2),
         ])
-        self.branch_2 = nn.MaxPool2d(3, stride=2)
+        self.branch_2 = mint.nn.MaxPool2d(3, stride=2)
 
     def construct(self, x: Tensor) -> Tensor:
         x0 = self.branch_0(x)
         x1 = self.branch_1(x)
         x2 = self.branch_2(x)
-        x3 = ops.concat((x0, x1, x2), axis=1)
+        x3 = mint.concat((x0, x1, x2), dim=1)
         return x3
 
 
@@ -194,21 +192,21 @@ class ReductionB(nn.Cell):
         super().__init__()
         self.branch_0 = nn.SequentialCell([
             BasicConv2d(1024, 192, kernel_size=1, stride=1),
-            BasicConv2d(192, 192, kernel_size=3, stride=2, pad_mode="valid"),
+            BasicConv2d(192, 192, kernel_size=3, stride=2),
         ])
         self.branch_1 = nn.SequentialCell([
             BasicConv2d(1024, 256, kernel_size=1, stride=1),
-            BasicConv2d(256, 256, kernel_size=(1, 7), stride=1),
-            BasicConv2d(256, 320, kernel_size=(7, 1), stride=1),
-            BasicConv2d(320, 320, kernel_size=3, stride=2, pad_mode="valid")
+            BasicConv2d(256, 256, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(256, 320, kernel_size=(7, 1), stride=1, padding=(3, 0)),
+            BasicConv2d(320, 320, kernel_size=3, stride=2)
         ])
-        self.branch_2 = nn.MaxPool2d(3, stride=2)
+        self.branch_2 = mint.nn.MaxPool2d(3, stride=2)
 
     def construct(self, x: Tensor) -> Tensor:
         x0 = self.branch_0(x)
         x1 = self.branch_1(x)
         x2 = self.branch_2(x)
-        x3 = ops.concat((x0, x1, x2), axis=1)
+        x3 = mint.concat((x0, x1, x2), dim=1)
         return x3  # 8 x 8 x 1536
 
 
@@ -220,19 +218,19 @@ class InceptionC(nn.Cell):
         self.branch_0 = BasicConv2d(1536, 256, kernel_size=1, stride=1)
 
         self.branch_1 = BasicConv2d(1536, 384, kernel_size=1, stride=1)
-        self.branch_1_1 = BasicConv2d(384, 256, kernel_size=(1, 3), stride=1)
-        self.branch_1_2 = BasicConv2d(384, 256, kernel_size=(3, 1), stride=1)
+        self.branch_1_1 = BasicConv2d(384, 256, kernel_size=(1, 3), stride=1, padding=(0, 1))
+        self.branch_1_2 = BasicConv2d(384, 256, kernel_size=(3, 1), stride=1, padding=(1, 0))
 
         self.branch_2 = nn.SequentialCell([
             BasicConv2d(1536, 384, kernel_size=1, stride=1),
-            BasicConv2d(384, 448, kernel_size=(3, 1), stride=1),
-            BasicConv2d(448, 512, kernel_size=(1, 3), stride=1),
+            BasicConv2d(384, 448, kernel_size=(3, 1), stride=1, padding=(1, 0)),
+            BasicConv2d(448, 512, kernel_size=(1, 3), stride=1, padding=(0, 1)),
         ])
-        self.branch_2_1 = BasicConv2d(512, 256, kernel_size=(1, 3), stride=1)
-        self.branch_2_2 = BasicConv2d(512, 256, kernel_size=(3, 1), stride=1)
+        self.branch_2_1 = BasicConv2d(512, 256, kernel_size=(1, 3), stride=1, padding=(0, 1))
+        self.branch_2_2 = BasicConv2d(512, 256, kernel_size=(3, 1), stride=1, padding=(1, 0))
 
         self.branch_3 = nn.SequentialCell([
-            nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same"),
+            mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1),
             BasicConv2d(1536, 256, kernel_size=1, stride=1)
         ])
 
@@ -241,13 +239,13 @@ class InceptionC(nn.Cell):
         x1 = self.branch_1(x)
         x1_1 = self.branch_1_1(x1)
         x1_2 = self.branch_1_2(x1)
-        x1 = ops.concat((x1_1, x1_2), axis=1)
+        x1 = mint.concat((x1_1, x1_2), dim=1)
         x2 = self.branch_2(x)
         x2_1 = self.branch_2_1(x2)
         x2_2 = self.branch_2_2(x2)
-        x2 = ops.concat((x2_1, x2_2), axis=1)
+        x2 = mint.concat((x2_1, x2_2), dim=1)
         x3 = self.branch_3(x)
-        return ops.concat((x0, x1, x2, x3), axis=1)
+        return mint.concat((x0, x1, x2, x3), dim=1)
 
 
 class InceptionV4(nn.Cell):
@@ -281,13 +279,13 @@ class InceptionV4(nn.Cell):
         self.pool = GlobalAvgPooling()
         self.dropout = Dropout(p=drop_rate)
         self.num_features = 1536
-        self.classifier = nn.Dense(self.num_features, num_classes)
+        self.classifier = mint.nn.Linear(self.num_features, num_classes)
         self._initialize_weights()
 
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(
                     init.initializer(init.XavierUniform(), cell.weight.shape, cell.weight.dtype))
 

@@ -7,7 +7,7 @@ import math
 from typing import Optional
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained
 from .layers.compatibility import Dropout
@@ -57,10 +57,9 @@ def _splitchannels(channels: int, num_groups: int) -> list:
 class Swish(nn.Cell):
     def __init__(self) -> None:
         super(Swish, self).__init__()
-        self.sigmoid = ops.Sigmoid()
 
     def construct(self, x: Tensor) -> Tensor:
-        return x * self.sigmoid(x)
+        return x * mint.sigmoid(x)
 
 
 class GroupedConv2d(nn.Cell):
@@ -75,14 +74,14 @@ class GroupedConv2d(nn.Cell):
         super(GroupedConv2d, self).__init__()
         self.num_groups = len(kernel_size)
         if self.num_groups == 1:
-            self.grouped_conv = nn.Conv2d(
+            self.grouped_conv = mint.nn.Conv2d(
                 in_channels,
                 out_channels,
                 kernel_size[0],
                 stride=stride,
-                pad_mode="pad",
                 padding=padding,
-                has_bias=False
+                padding_mode='zeros',
+                bias=False
             )
         else:
             self.split_in_channels = _splitchannels(in_channels, self.num_groups)
@@ -90,14 +89,14 @@ class GroupedConv2d(nn.Cell):
 
             self.grouped_conv = nn.CellList()
             for i in range(self.num_groups):
-                self.grouped_conv.append(nn.Conv2d(
+                self.grouped_conv.append(mint.nn.Conv2d(
                     self.split_in_channels[i],
                     self.split_out_channels[i],
                     kernel_size[i],
                     stride=stride,
-                    pad_mode="pad",
                     padding=padding,
-                    has_bias=False
+                    padding_mode='zeros',
+                    bias=False
                 ))
 
     def construct(self, x: Tensor) -> Tensor:
@@ -113,7 +112,7 @@ class GroupedConv2d(nn.Cell):
             conv = self.grouped_conv[i]
             output.append(conv(x_split))
 
-        return ops.concat(output, axis=1)
+        return mint.concat(output, dim=1)
 
 
 class MDConv(nn.Cell):
@@ -124,30 +123,30 @@ class MDConv(nn.Cell):
         self.num_groups = len(kernel_size)
 
         if self.num_groups == 1:
-            self.mixed_depthwise_conv = nn.Conv2d(
+            self.mixed_depthwise_conv = mint.nn.Conv2d(
                 channels,
                 channels,
                 kernel_size[0],
                 stride=stride,
-                pad_mode="pad",
                 padding=kernel_size[0] // 2,
-                group=channels,
-                has_bias=False
+                padding_mode='zeros',
+                groups=channels,
+                bias=False
             )
         else:
             self.split_channels = _splitchannels(channels, self.num_groups)
 
             self.mixed_depthwise_conv = nn.CellList()
             for i in range(self.num_groups):
-                self.mixed_depthwise_conv.append(nn.Conv2d(
+                self.mixed_depthwise_conv.append(mint.nn.Conv2d(
                     self.split_channels[i],
                     self.split_channels[i],
                     kernel_size[i],
                     stride=stride,
-                    pad_mode="pad",
                     padding=kernel_size[i] // 2,
-                    group=self.split_channels[i],
-                    has_bias=False
+                    padding_mode='zeros',
+                    groups=self.split_channels[i],
+                    bias=False
                 ))
 
     def construct(self, x: Tensor) -> Tensor:
@@ -163,7 +162,7 @@ class MDConv(nn.Cell):
             conv = self.mixed_depthwise_conv[i]
             output.append(conv(x_split))
 
-        return ops.concat(output, axis=1)
+        return mint.concat(output, dim=1)
 
 
 class MixNetBlock(nn.Cell):
@@ -183,7 +182,7 @@ class MixNetBlock(nn.Cell):
     ) -> None:
         super(MixNetBlock, self).__init__()
         assert activation in ["ReLU", "Swish"]
-        self.activation = Swish if activation == "Swish" else nn.ReLU
+        self.activation = Swish if activation == "Swish" else mint.nn.ReLU
 
         expand_channels = in_channels * expand_ratio
         self.residual_connection = (stride == 1 and in_channels == out_channels)
@@ -193,14 +192,14 @@ class MixNetBlock(nn.Cell):
             # expand
             conv.extend([
                 GroupedConv2d(in_channels, expand_channels, expand_ksize),
-                nn.BatchNorm2d(expand_channels),
+                mint.nn.BatchNorm2d(expand_channels),
                 self.activation()
             ])
 
         # depthwise
         conv.extend([
             MDConv(expand_channels, kernel_size, stride),
-            nn.BatchNorm2d(expand_channels),
+            mint.nn.BatchNorm2d(expand_channels),
             self.activation()
         ])
 
@@ -212,7 +211,7 @@ class MixNetBlock(nn.Cell):
         # projection phase
         conv.extend([
             GroupedConv2d(expand_channels, out_channels, project_ksize),
-            nn.BatchNorm2d(out_channels)
+            mint.nn.BatchNorm2d(out_channels)
         ])
 
         self.convs = nn.SequentialCell(conv)
@@ -311,9 +310,9 @@ class MixNet(nn.Cell):
 
         # stem convolution
         self.stem_conv = nn.SequentialCell([
-            nn.Conv2d(in_channels, stem_channels, 3, stride=2, pad_mode="pad", padding=1),
-            nn.BatchNorm2d(stem_channels),
-            nn.ReLU()
+            mint.nn.Conv2d(in_channels, stem_channels, 3, stride=2, padding=1, padding_mode='zeros'),
+            mint.nn.BatchNorm2d(stem_channels),
+            mint.nn.ReLU()
         ])
 
         # building MixNet blocks
@@ -334,21 +333,21 @@ class MixNet(nn.Cell):
 
         # head
         self.head_conv = nn.SequentialCell([
-            nn.Conv2d(block_configs[-1][1], feature_size, 1, pad_mode="pad", padding=0),
-            nn.BatchNorm2d(feature_size),
-            nn.ReLU()
+            mint.nn.Conv2d(block_configs[-1][1], feature_size, 1,padding=0, padding_mode='zeros'),
+            mint.nn.BatchNorm2d(feature_size),
+            mint.nn.ReLU()
         ])
 
         self.pool = GlobalAvgPooling()
         self.dropout = Dropout(p=drop_rate)
-        self.classifier = nn.Dense(feature_size, num_classes)
+        self.classifier = mint.nn.Linear(feature_size, num_classes)
 
         self._initialize_weights()
 
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 fan_out = cell.kernel_size[0] * cell.kernel_size[1] * cell.out_channels
                 cell.weight.set_data(
                     init.initializer(init.Normal(math.sqrt(2.0 / fan_out)),
@@ -356,10 +355,10 @@ class MixNet(nn.Cell):
                 if cell.bias is not None:
                     cell.bias.set_data(
                         init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
-                cell.gamma.set_data(init.initializer("ones", cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer("zeros", cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
+                cell.weight.set_data(init.initializer("ones", cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(
                     init.initializer(init.Uniform(1.0 / math.sqrt(cell.weight.shape[0])),
                                      cell.weight.shape, cell.weight.dtype))

@@ -5,7 +5,7 @@ Refer to: Learning Transferable Architectures for Scalable Image Recognition
 import math
 
 import mindspore.common.initializer as init
-from mindspore import Tensor, nn, ops
+from mindspore import Tensor, nn, mint
 
 from .helpers import load_pretrained
 from .layers.compatibility import Dropout
@@ -46,11 +46,10 @@ class SeparableConv2d(nn.Cell):
         bias: bool = False,
     ) -> None:
         super().__init__()
-        self.depthwise_conv2d = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=dw_kernel,
-                                          stride=dw_stride, pad_mode="pad", padding=dw_padding, group=in_channels,
-                                          has_bias=bias)
-        self.pointwise_conv2d = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1,
-                                          pad_mode="pad", has_bias=bias)
+        self.depthwise_conv2d = mint.nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=dw_kernel,
+                                               stride=dw_stride, padding=dw_padding, groups=in_channels,bias=bias)
+        self.pointwise_conv2d = mint.nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1,
+                                               stride=1, bias=bias)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.depthwise_conv2d(x)
@@ -71,16 +70,14 @@ class BranchSeparables(nn.Cell):
         bias: bool = False,
     ) -> None:
         super().__init__()
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.separable_1 = SeparableConv2d(
-            in_channels, in_channels, kernel_size, stride, padding, bias=bias
-        )
-        self.bn_sep_1 = nn.BatchNorm2d(num_features=in_channels, eps=0.001, momentum=0.9, affine=True)
-        self.relu1 = nn.ReLU()
+            in_channels, in_channels, kernel_size, stride, padding, bias=bias)
+        self.bn_sep_1 = mint.nn.BatchNorm2d(num_features=in_channels, eps=0.001, momentum=0.9, affine=True)
+        self.relu1 = mint.nn.ReLU()
         self.separable_2 = SeparableConv2d(
-            in_channels, out_channels, kernel_size, 1, padding, bias=bias
-        )
-        self.bn_sep_2 = nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9, affine=True)
+            in_channels, out_channels, kernel_size, 1, padding, bias=bias)
+        self.bn_sep_2 = mint.nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9, affine=True)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.relu(x)
@@ -105,16 +102,16 @@ class BranchSeparablesStem(nn.Cell):
         bias: bool = False,
     ) -> None:
         super().__init__()
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.separable_1 = SeparableConv2d(
             in_channels, out_channels, kernel_size, stride, padding, bias=bias
         )
-        self.bn_sep_1 = nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9, affine=True)
-        self.relu1 = nn.ReLU()
+        self.bn_sep_1 = mint.nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9, affine=True)
+        self.relu1 = mint.nn.ReLU()
         self.separable_2 = SeparableConv2d(
             out_channels, out_channels, kernel_size, 1, padding, bias=bias
         )
-        self.bn_sep_2 = nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9, affine=True)
+        self.bn_sep_2 = mint.nn.BatchNorm2d(num_features=out_channels, eps=0.001, momentum=0.9, affine=True)
 
     def construct(self, x: Tensor) -> Tensor:
         x = self.relu(x)
@@ -168,10 +165,10 @@ class CellStem0(nn.Cell):
         self.num_filters = num_filters
         self.stem_filters = stem_filters
         self.conv_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)
         ])
 
         self.comb_iter_0_left = BranchSeparables(
@@ -181,22 +178,22 @@ class CellStem0(nn.Cell):
             self.stem_filters, self.num_filters, 7, 2, 3, bias=False
         )
 
-        self.comb_iter_1_left = nn.MaxPool2d(kernel_size=3, stride=2, pad_mode="same")
+        self.comb_iter_1_left = mint.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.comb_iter_1_right = BranchSeparablesStem(
             self.stem_filters, self.num_filters, 7, 2, 3, bias=False
         )
 
-        self.comb_iter_2_left = nn.AvgPool2d(kernel_size=3, stride=2, pad_mode="same")
+        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=2, padding=1, count_include_pad=True)
         self.comb_iter_2_right = BranchSeparablesStem(
             self.stem_filters, self.num_filters, 5, 2, 2, bias=False
         )
 
-        self.comb_iter_3_right = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             self.num_filters, self.num_filters, 3, 1, 1, bias=False
         )
-        self.comb_iter_4_right = nn.MaxPool2d(kernel_size=3, stride=2, pad_mode="same")
+        self.comb_iter_4_right = mint.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
     def construct(self, x: Tensor) -> Tensor:
         x1 = self.conv_1x1(x)
@@ -220,7 +217,7 @@ class CellStem0(nn.Cell):
         x_comb_iter_4_right = self.comb_iter_4_right(x1)
         x_comb_iter_4 = x_comb_iter_4_left + x_comb_iter_4_right
 
-        x_out = ops.concat((x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), axis=1)
+        x_out = mint.concat((x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), dim=1)
         return x_out
 
 
@@ -236,28 +233,28 @@ class CellStem1(nn.Cell):
         self.num_filters = num_filters
         self.stem_filters = stem_filters
         self.conv_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=2 * self.num_filters, out_channels=self.num_filters, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)])
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=2 * self.num_filters, out_channels=self.num_filters, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)])
 
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.path_1 = nn.SequentialCell([
-            nn.AvgPool2d(kernel_size=1, stride=2, pad_mode="valid"),
-            nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False)])
+            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=True),
+            mint.nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
+                           bias=False)])
 
         self.path_2 = nn.CellList([])
         self.path_2.append(nn.Pad(paddings=((0, 0), (0, 0), (0, 1), (0, 1)), mode="CONSTANT"))
         self.path_2.append(
-            nn.AvgPool2d(kernel_size=1, stride=2, pad_mode="valid")
+            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=True)
         )
         self.path_2.append(
-            nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False)
+            mint.nn.Conv2d(in_channels=self.stem_filters, out_channels=self.num_filters // 2, kernel_size=1, stride=1,
+                           bias=False)
         )
 
-        self.final_path_bn = nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)
+        self.final_path_bn = mint.nn.BatchNorm2d(num_features=self.num_filters, eps=0.001, momentum=0.9, affine=True)
 
         self.comb_iter_0_left = BranchSeparables(
             self.num_filters,
@@ -276,7 +273,7 @@ class CellStem1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_1_left = nn.MaxPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_1_left = mint.nn.MaxPool2d(3, stride=2, padding=1)
         self.comb_iter_1_right = BranchSeparables(
             self.num_filters,
             self.num_filters,
@@ -286,7 +283,7 @@ class CellStem1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_2_left = nn.AvgPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=True)
         self.comb_iter_2_right = BranchSeparables(
             self.num_filters,
             self.num_filters,
@@ -296,7 +293,7 @@ class CellStem1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_3_right = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             self.num_filters,
@@ -306,7 +303,7 @@ class CellStem1(nn.Cell):
             1,
             bias=False
         )
-        self.comb_iter_4_right = nn.MaxPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_4_right = mint.nn.MaxPool2d(3, stride=2, padding=1)
 
     def construct(self, x_conv0: Tensor, x_stem_0: Tensor) -> Tensor:
         x_left = self.conv_1x1(x_stem_0)
@@ -319,7 +316,7 @@ class CellStem1(nn.Cell):
         x_path2 = self.path_2[1](x_path2)
         x_path2 = self.path_2[2](x_path2)
         # final path
-        x_right = self.final_path_bn(ops.concat((x_path1, x_path2), axis=1))
+        x_right = self.final_path_bn(mint.concat((x_path1, x_path2), dim=1))
 
         x_comb_iter_0_left = self.comb_iter_0_left(x_left)
         x_comb_iter_0_right = self.comb_iter_0_right(x_right)
@@ -340,7 +337,7 @@ class CellStem1(nn.Cell):
         x_comb_iter_4_right = self.comb_iter_4_right(x_left)
         x_comb_iter_4 = x_comb_iter_4_left + x_comb_iter_4_right
 
-        x_out = ops.concat((x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), axis=1)
+        x_out = mint.concat((x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), dim=1)
         return x_out
 
 
@@ -356,28 +353,28 @@ class FirstCell(nn.Cell):
     ) -> None:
         super().__init__()
         self.conv_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
 
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.path_1 = nn.SequentialCell([
-            nn.AvgPool2d(kernel_size=1, stride=2, pad_mode="valid"),
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False)])
+            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=True),
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False)])
 
         self.path_2 = nn.CellList([])
         self.path_2.append(nn.Pad(paddings=((0, 0), (0, 0), (0, 1), (0, 1)), mode="CONSTANT"))
         self.path_2.append(
-            nn.AvgPool2d(kernel_size=1, stride=2, pad_mode="valid")
+            mint.nn.AvgPool2d(kernel_size=1, stride=2, count_include_pad=True)
         )
         self.path_2.append(
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False)
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False)
         )
 
-        self.final_path_bn = nn.BatchNorm2d(num_features=out_channels_left * 2, eps=0.001, momentum=0.9, affine=True)
+        self.final_path_bn = mint.nn.BatchNorm2d(num_features=out_channels_left * 2, eps=0.001, momentum=0.9, affine=True)
 
         self.comb_iter_0_left = BranchSeparables(
             out_channels_right, out_channels_right, 5, 1, 2, bias=False
@@ -393,10 +390,10 @@ class FirstCell(nn.Cell):
             out_channels_right, out_channels_right, 3, 1, 1, bias=False
         )
 
-        self.comb_iter_2_left = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
+        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
-        self.comb_iter_3_left = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
-        self.comb_iter_3_right = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
+        self.comb_iter_3_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             out_channels_right, out_channels_right, 3, 1, 1, bias=False
@@ -410,7 +407,7 @@ class FirstCell(nn.Cell):
         x_path2 = self.path_2[1](x_path2)
         x_path2 = self.path_2[2](x_path2)
         # final path
-        x_left = self.final_path_bn(ops.concat((x_path1, x_path2), axis=1))
+        x_left = self.final_path_bn(mint.concat((x_path1, x_path2), dim=1))
 
         x_right = self.conv_1x1(x)
 
@@ -432,7 +429,7 @@ class FirstCell(nn.Cell):
         x_comb_iter_4_left = self.comb_iter_4_left(x_right)
         x_comb_iter_4 = x_comb_iter_4_left + x_right
 
-        x_out = ops.concat((x_left, x_comb_iter_0, x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), axis=1)
+        x_out = mint.concat((x_left, x_comb_iter_0, x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), dim=1)
         return x_out
 
 
@@ -445,16 +442,16 @@ class NormalCell(nn.Cell):
                  out_channels_right: int) -> None:
         super().__init__()
         self.conv_prev_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
 
         self.conv_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
 
         self.comb_iter_0_left = BranchSeparables(
             out_channels_right, out_channels_right, 5, 1, 2, bias=False
@@ -470,10 +467,10 @@ class NormalCell(nn.Cell):
             out_channels_left, out_channels_left, 3, 1, 1, bias=False
         )
 
-        self.comb_iter_2_left = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
+        self.comb_iter_2_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
-        self.comb_iter_3_left = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
-        self.comb_iter_3_right = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
+        self.comb_iter_3_left = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             out_channels_right, out_channels_right, 3, 1, 1, bias=False
@@ -501,7 +498,7 @@ class NormalCell(nn.Cell):
         x_comb_iter_4_left = self.comb_iter_4_left(x_right)
         x_comb_iter_4 = x_comb_iter_4_left + x_right
 
-        x_out = ops.concat((x_left, x_comb_iter_0, x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), axis=1)
+        x_out = mint.concat((x_left, x_comb_iter_0, x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), dim=1)
         return x_out
 
 
@@ -517,16 +514,16 @@ class ReductionCell0(nn.Cell):
     ) -> None:
         super().__init__()
         self.conv_prev_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
 
         self.conv_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
 
         self.comb_iter_0_left = BranchSeparablesReduction(
             out_channels_right, out_channels_right, 5, 2, 2, bias=False
@@ -535,22 +532,22 @@ class ReductionCell0(nn.Cell):
             out_channels_right, out_channels_right, 7, 2, 3, bias=False
         )
 
-        self.comb_iter_1_left = nn.MaxPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_1_left = mint.nn.MaxPool2d(3, stride=2, padding=1)
         self.comb_iter_1_right = BranchSeparablesReduction(
             out_channels_right, out_channels_right, 7, 2, 3, bias=False
         )
 
-        self.comb_iter_2_left = nn.AvgPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=True)
         self.comb_iter_2_right = BranchSeparablesReduction(
             out_channels_right, out_channels_right, 5, 2, 2, bias=False
         )
 
-        self.comb_iter_3_right = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparablesReduction(
             out_channels_right, out_channels_right, 3, 1, 1, bias=False
         )
-        self.comb_iter_4_right = nn.MaxPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_4_right = mint.nn.MaxPool2d(3, stride=2, padding=1)
 
     def construct(self, x: Tensor, x_prev: Tensor) -> Tensor:
         x_left = self.conv_prev_1x1(x_prev)
@@ -575,7 +572,7 @@ class ReductionCell0(nn.Cell):
         x_comb_iter_4_right = self.comb_iter_4_right(x_right)
         x_comb_iter_4 = x_comb_iter_4_left + x_comb_iter_4_right
 
-        x_out = ops.concat((x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), axis=1)
+        x_out = mint.concat((x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), dim=1)
         return x_out
 
 
@@ -591,16 +588,16 @@ class ReductionCell1(nn.Cell):
     ) -> None:
         super().__init__()
         self.conv_prev_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=in_channels_left, out_channels=out_channels_left, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=out_channels_left, eps=0.001, momentum=0.9, affine=True)])
 
         self.conv_1x1 = nn.SequentialCell([
-            nn.ReLU(),
-            nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
-                      pad_mode="pad", has_bias=False),
-            nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
+            mint.nn.ReLU(),
+            mint.nn.Conv2d(in_channels=in_channels_right, out_channels=out_channels_right, kernel_size=1, stride=1,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=out_channels_right, eps=0.001, momentum=0.9, affine=True)])
 
         self.comb_iter_0_left = BranchSeparables(
             out_channels_right,
@@ -619,7 +616,7 @@ class ReductionCell1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_1_left = nn.MaxPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_1_left = mint.nn.MaxPool2d(3, stride=2, padding=1)
         self.comb_iter_1_right = BranchSeparables(
             out_channels_right,
             out_channels_right,
@@ -629,7 +626,7 @@ class ReductionCell1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_2_left = nn.AvgPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_2_left = mint.nn.AvgPool2d(3, stride=2, padding=1, count_include_pad=True)
         self.comb_iter_2_right = BranchSeparables(
             out_channels_right,
             out_channels_right,
@@ -639,7 +636,7 @@ class ReductionCell1(nn.Cell):
             bias=False
         )
 
-        self.comb_iter_3_right = nn.AvgPool2d(kernel_size=3, stride=1, pad_mode="same")
+        self.comb_iter_3_right = mint.nn.AvgPool2d(kernel_size=3, stride=1, padding=1, count_include_pad=True)
 
         self.comb_iter_4_left = BranchSeparables(
             out_channels_right,
@@ -649,7 +646,7 @@ class ReductionCell1(nn.Cell):
             1,
             bias=False
         )
-        self.comb_iter_4_right = nn.MaxPool2d(3, stride=2, pad_mode="same")
+        self.comb_iter_4_right = mint.nn.MaxPool2d(3, stride=2, padding=1)
 
     def construct(self, x: Tensor, x_prev: Tensor) -> Tensor:
         x_left = self.conv_prev_1x1(x_prev)
@@ -674,7 +671,7 @@ class ReductionCell1(nn.Cell):
         x_comb_iter_4_right = self.comb_iter_4_right(x_right)
         x_comb_iter_4 = x_comb_iter_4_left + x_comb_iter_4_right
 
-        x_out = ops.concat((x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), axis=1)
+        x_out = mint.concat((x_comb_iter_1, x_comb_iter_2, x_comb_iter_3, x_comb_iter_4), dim=1)
         return x_out
 
 
@@ -705,10 +702,9 @@ class NASNetAMobile(nn.Cell):
         # 24 is default value for the architecture
 
         self.conv0 = nn.SequentialCell([
-            nn.Conv2d(in_channels=in_channels, out_channels=self.stem_filters, kernel_size=3, stride=2, pad_mode="pad",
-                      padding=0,
-                      has_bias=False),
-            nn.BatchNorm2d(num_features=self.stem_filters, eps=0.001, momentum=0.9, affine=True)
+            mint.nn.Conv2d(in_channels=in_channels, out_channels=self.stem_filters, kernel_size=3, stride=2,
+                           bias=False),
+            mint.nn.BatchNorm2d(num_features=self.stem_filters, eps=0.001, momentum=0.9, affine=True)
         ])
 
         self.cell_stem_0 = CellStem0(
@@ -807,9 +803,9 @@ class NASNetAMobile(nn.Cell):
             out_channels_right=4 * filters,
         )  # 24, 4
 
-        self.relu = nn.ReLU()
+        self.relu = mint.nn.ReLU()
         self.dropout = Dropout(p=0.5)
-        self.classifier = nn.Dense(in_channels=24 * filters, out_channels=num_classes)
+        self.classifier = mint.nn.Linear(in_features=24 * filters, out_features=num_classes)
         self.pool = GlobalAvgPooling()
         self._initialize_weights()
 
@@ -817,16 +813,16 @@ class NASNetAMobile(nn.Cell):
         """Initialize weights for cells."""
         self.init_parameters_data()
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 n = cell.kernel_size[0] * cell.kernel_size[1] * cell.out_channels
                 cell.weight.set_data(init.initializer(init.Normal(math.sqrt(2. / n), 0),
                                                       cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
-                cell.gamma.set_data(init.initializer(init.One(), cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer(init.Zero(), cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
+                cell.weight.set_data(init.initializer(init.One(), cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(init.initializer(init.Normal(0.01, 0), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Zero(), cell.bias.shape, cell.bias.dtype))

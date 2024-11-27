@@ -5,7 +5,7 @@ Refer to Scaling Local Self-Attention for Parameter Effificient Visual Backbones
 import mindspore as ms
 import mindspore.common.initializer as init
 import mindspore.numpy as msnp
-from mindspore import Parameter, Tensor, nn, ops
+from mindspore import Parameter, Tensor, nn, ops, mint
 from mindspore.common.initializer import HeUniform, TruncatedNormal
 
 from .helpers import load_pretrained, make_divisible
@@ -48,16 +48,9 @@ class ConvBnAct(nn.Cell):
                  bias_init=False
                  ):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels=in_channels,
-                              out_channels=out_channels,
-                              kernel_size=kernel_size,
-                              stride=stride,
-                              pad_mode="pad",
-                              padding=padding,
-                              weight_init=HeUniform(),
-                              has_bias=bias_init
-                              )
-        self.bn = nn.BatchNorm2d(out_channels)
+        self.conv = mint.nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
+                                   stride=stride, padding=padding, padding_mode='zeros', bias=bias_init)
+        self.bn = mint.nn.BatchNorm2d(out_channels)
         self.act = ActLayer(act)
 
     def construct(self, inputs):
@@ -73,9 +66,9 @@ class ActLayer(nn.Cell):
     def __init__(self, act):
         super().__init__()
         if act == 'silu':
-            self.act = nn.SiLU()
+            self.act = mint.nn.SiLU()
         elif act == 'relu':
-            self.act = nn.ReLU()
+            self.act = mint.nn.ReLU()
         else:
             self.act = Identity()
 
@@ -89,7 +82,7 @@ class BatchNormAct2d(nn.Cell):
     """
     def __init__(self, chs, act=None):
         super().__init__()
-        self.bn = nn.BatchNorm2d(chs)
+        self.bn = mint.nn.BatchNorm2d(chs)
         self.act = ActLayer(act)
 
     def construct(self, inputs):
@@ -105,16 +98,16 @@ class SelectAdaptivePool2d(nn.Cell):
         super().__init__()
         # convert other false values to empty string for consistent TS typing
         self.pool_type = pool_type or ''
-        self.flatten = nn.Flatten() if flatten else Identity()
+        self.flatten = mint.flatten if flatten else Identity()
         if pool_type == '':
             self.pool = Identity()
         elif pool_type == 'avg':
-            self.pool = ops.ReduceMean(keep_dims=True)
+            self.pool = mint.mean
         else:
             assert False, 'Invalid pool type: %s' % pool_type
 
     def construct(self, inputs):
-        out = self.pool(inputs, (2, 3))
+        out = self.pool(inputs, (2, 3),keepdim=True)
         out = self.flatten(out)
         return out
 
@@ -126,7 +119,7 @@ class Stem(nn.Cell):
         self.conv2 = ConvBnAct(24, 32, kernel_size=3, stride=1, padding=1, act=act)
         self.conv3 = ConvBnAct(32, 64, kernel_size=3, stride=1, padding=1, act=act)
         self.pad = ops.Pad(paddings=((0, 0), (0, 0), (1, 1), (1, 1)))
-        self.pool = nn.MaxPool2d(kernel_size=3, stride=2, pad_mode='valid')
+        self.pool = mint.nn.MaxPool2d(kernel_size=3, stride=2, padding=0)
 
     def construct(self, x):
         x = self.conv1(x)
@@ -146,22 +139,22 @@ def rel_logits_1d(q, rel_k, permute_mask):
     B, H, W, _ = q.shape
     rel_size = rel_k.shape[0]
     win_size = (rel_size+1)//2
-    rel_k = ops.transpose(rel_k, (1, 0))
+    rel_k = mint.permute(rel_k, (1, 0))
     x = msnp.tensordot(q, rel_k, axes=1)
-    x = ops.reshape(x, (-1, W, rel_size))
+    x = mint.reshape(x, (-1, W, rel_size))
     # pad to shift from relative to absolute indexing
-    x_pad = ops.pad(x, padding=(0, 1))
-    x_pad = ops.flatten(x_pad)
+    x_pad = ops.pad(x, paddings=((0, 0), (0, 0), (0, 1)))
+    x_pad = mint.flatten(x_pad)
     x_pad = ops.expand_dims(x_pad, 1)
-    x_pad = ops.pad(x_pad, padding=(0, rel_size - W))
+    x_pad = ops.pad(x_pad, paddings=((0, 0), (0, 0), (0, rel_size - W)))
     x_pad = ops.squeeze(x_pad, axis=())
     # reshape adn slice out the padded elements
-    x_pad = ops.reshape(x_pad, (-1, W+1, rel_size))
+    x_pad = mint.reshape(x_pad, (-1, W+1, rel_size))
     x = x_pad[:, :W, win_size-1:]
     # reshape and tile
-    x = ops.reshape(x, (B, H, 1, W, win_size))
+    x = mint.reshape(x, (B, H, 1, W, win_size))
     x = ops.broadcast_to(x, (B, H, win_size, W, win_size))
-    x = ops.transpose(x, permute_mask)
+    x = mint.permute(x, permute_mask)
     return x
 
 
@@ -191,13 +184,13 @@ class RelPosEmb(nn.Cell):
     def construct(self, q):
         B, BB, HW, _ = q.shape
         # relative logits in width dimension
-        q = ops.reshape(q, (-1, self.block_size, self.block_size, self.dim_head))
+        q = mint.reshape(q, (-1, self.block_size, self.block_size, self.dim_head))
         rel_logits_w = rel_logits_1d(q, self.rel_width, permute_mask=(0, 1, 3, 2, 4))
         # relative logits in height dimension
-        q = ops.transpose(q, (0, 2, 1, 3))
+        q = mint.permute(q, (0, 2, 1, 3))
         rel_logits_h = rel_logits_1d(q, self.rel_height, permute_mask=(0, 3, 1, 4, 2))
         rel_logits = rel_logits_h+rel_logits_w
-        rel_logits = ops.reshape(rel_logits, (B, BB, HW, -1))
+        rel_logits = mint.reshape(rel_logits, (B, BB, HW, -1))
         return rel_logits
 
 
@@ -259,17 +252,12 @@ class HaloAttention(nn.Cell):
             use_avg_pool = avg_down or block_size % stride != 0
             self.block_stride = stride
             self.block_size_ds = self.block_size // self.block_stride
-        self.q = nn.Conv2d(dim,
-                           self.dim_out_qk,
-                           1,
-                           stride=self.block_stride,
-                           has_bias=qkv_bias,
-                           weight_init=HeUniform())
-        self.kv = nn.Conv2d(dim, self.dim_out_qk + self.dim_out_v, 1, has_bias=qkv_bias)
+        self.q = mint.nn.Conv2d(dim, self.dim_out_qk, 1, stride=self.block_stride, bias=qkv_bias)
+        self.kv = mint.nn.Conv2d(dim, self.dim_out_qk + self.dim_out_v, 1, bias=qkv_bias)
         self.pos_embed = RelPosEmb(
             block_size=self.block_size_ds, win_size=self.win_size, dim_head=self.dim_head_qk)
-        self.pool = nn.AvgPool2d(2, 2) if use_avg_pool else Identity()
-        self.softmax_fn = ops.Softmax(-1)
+        self.pool = mint.nn.AvgPool2d(2, 2) if use_avg_pool else Identity()
+        self.softmax_fn = mint.nn.Softmax(-1)
         self.pad_kv = ops.Pad(
             paddings=((0, 0), (0, 0), (self.halo_size, self.halo_size), (self.halo_size, self.halo_size))
             )
@@ -288,34 +276,34 @@ class HaloAttention(nn.Cell):
         num_blocks = num_h_blocks * num_w_blocks
         q = self.q(x)
         # unfold
-        q = ops.reshape(q, (-1, self.dim_head_qk, num_h_blocks, self.block_size_ds, num_w_blocks, self.block_size_ds))
-        q = ops.transpose(q, (0, 1, 3, 5, 2, 4))
-        q = ops.reshape(q, (B*self.num_heads, self.dim_head_qk, -1, num_blocks))
-        q = ops.transpose(q, (0, 3, 2, 1))  # B*num_heads,num_blocks,block_size**2, dim_head
+        q = mint.reshape(q, (-1, self.dim_head_qk, num_h_blocks, self.block_size_ds, num_w_blocks, self.block_size_ds))
+        q = mint.permute(q, (0, 1, 3, 5, 2, 4))
+        q = mint.reshape(q, (B*self.num_heads, self.dim_head_qk, -1, num_blocks))
+        q = mint.permute(q, (0, 3, 2, 1))  # B*num_heads,num_blocks,block_size**2, dim_head
         kv = self.kv(x)  # [bs,dim_out,H,W]
         kv = self.pad_kv(kv)
         kv = self.kv_unfold(kv)  # B, C_kh_kw, _, _
-        kv = ops.reshape(kv, (B * self.num_heads, self.dim_head_qk + self.dim_head_v, -1, num_blocks))
-        kv = ops.transpose(kv, (0, 3, 2, 1))  # [B * self.num_heads, num_blocks, -1, self.dim_head_qk + self.dim_head_v]
+        kv = mint.reshape(kv, (B * self.num_heads, self.dim_head_qk + self.dim_head_v, -1, num_blocks))
+        kv = mint.permute(kv, (0, 3, 2, 1))  # [B * self.num_heads, num_blocks, -1, self.dim_head_qk + self.dim_head_v]
         k = kv[..., :self.dim_head_qk]
         v = kv[..., self.dim_head_qk:(self.dim_head_qk + self.dim_head_v)]
-        k = ops.transpose(k, (0, 1, 3, 2))  # [B * self.num_heads, num_blocks, self.dim_head_qk, -1]
+        k = mint.permute(k, (0, 1, 3, 2))  # [B * self.num_heads, num_blocks, self.dim_head_qk, -1]
         if self.scale_pos_embed:
-            attn = (ops.matmul(q, k) + self.pos_embed(q)) * self.scale
+            attn = (mint.matmul(q, k) + self.pos_embed(q)) * self.scale
         else:
             pos_embed_q = self.pos_embed(q)
-            part_1 = (ops.matmul(q, k)) * self.scale
+            part_1 = (mint.matmul(q, k)) * self.scale
             attn = part_1 + pos_embed_q
         # attn: B * num_heads, num_blocks, block_size ** 2, win_size ** 2
         attn = self.softmax_fn(attn)
         # attn = attn @ v
-        attn = ops.matmul(attn, v)  # attn: B * num_heads, num_blocks, block_size ** 2, dim_head_v
-        out = ops.transpose(attn, (0, 3, 2, 1))  # B * num_heads, dim_head_v, block_size ** 2, num_blocks
+        attn = mint.matmul(attn, v)  # attn: B * num_heads, num_blocks, block_size ** 2, dim_head_v
+        out = mint.permute(attn, (0, 3, 2, 1))  # B * num_heads, dim_head_v, block_size ** 2, num_blocks
         # fold
-        out = ops.reshape(out, (-1, self.block_size_ds, self.block_size_ds, num_h_blocks, num_w_blocks))
+        out = mint.reshape(out, (-1, self.block_size_ds, self.block_size_ds, num_h_blocks, num_w_blocks))
         # -1, num_h_blocks, self.block_size_ds, num_w_blocks, self.block_size_ds
-        out = ops.transpose(out, (0, 3, 1, 4, 2))
-        out = ops.reshape(out, (B, self.dim_out_v, H // self.block_stride, W // self.block_stride))
+        out = mint.permute(out, (0, 3, 1, 4, 2))
+        out = mint.reshape(out, (B, self.dim_out_v, H // self.block_stride, W // self.block_stride))
         # B, dim_out, H // block_stride, W // block_stride
         out = self.pool(out)
         return out
@@ -595,7 +583,7 @@ class HaloNet(nn.Cell):
                                 downsample=True)
         self.classifier = nn.SequentialCell([
             SelectAdaptivePool2d(flatten=True),
-            nn.Dense(chs_list[4], num_classes, TruncatedNormal(.02), bias_init='zeros'),
+            mint.nn.Linear(chs_list[4], num_classes, weight_init=TruncatedNormal(.02), bias_init='zeros'),
             Identity()]
         )
         self._initialize_weights()
@@ -603,14 +591,14 @@ class HaloNet(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            if isinstance(cell, nn.Conv2d):
+            if isinstance(cell, mint.nn.Conv2d):
                 cell.weight.set_data(init.initializer(init.HeUniform(), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
-                cell.gamma.set_data(init.initializer("ones", cell.gamma.shape, cell.gamma.dtype))
-                cell.beta.set_data(init.initializer("zeros", cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
+                cell.weight.set_data(init.initializer("ones", cell.weight.shape, cell.weight.dtype))
+                cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(init.initializer(init.HeUniform(), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
