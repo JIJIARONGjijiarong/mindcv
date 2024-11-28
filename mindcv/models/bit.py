@@ -8,6 +8,7 @@ from typing import List, Optional, Type, Union
 import mindspore
 from mindspore import Tensor, nn, ops, mint
 import mindspore.mint.nn.functional as F
+from mindspore.ops.functional.nn_func import pad_ext
 
 from .helpers import load_pretrained
 from .layers.pooling import GlobalAvgPooling
@@ -37,17 +38,16 @@ default_cfgs = {
     "BiT_resnet101": _cfg(url="https://download.mindspore.cn/toolkits/mindcv/bit/BiT_resnet101-2efa9106.ckpt"),
 }
 
-# TODO: mint.nn.Conv2d
-class StdConv2d(nn.Conv2d):
+
+class StdConv2d(mint.nn.Conv2d):
     r"""Conv2d with Weight Standardization
     Args:
         in_channels(int): The channel number of the input tensor of the Conv2d layer.
         out_channels(int): The channel number of the output tensor of the Conv2d layer.
         kernel_size(int): Specifies the height and width of the 2D convolution kernel.
         stride(int): The movement stride of the 2D convolution kernel. Default: 1.
-        pad_mode(str): Specifies padding mode. The optional values are "same", "valid", "pad". Default: "same".
         padding(int): The number of padding on the height and width directions of the input. Default: 0.
-        group(int): Splits filter into groups. Default: 1.
+        groups(int): Splits filter into groups. Default: 1.
     """
 
     def __init__(
@@ -56,18 +56,16 @@ class StdConv2d(nn.Conv2d):
         out_channels,
         kernel_size,
         stride=1,
-        pad_mode="same",
         padding=0,
-        group=1,
+        groups=1,
     ) -> None:
         super(StdConv2d, self).__init__(
             in_channels,
             out_channels,
             kernel_size,
-            stride,
-            pad_mode,
-            padding,
-            group,
+            stride=stride,
+            padding=padding,
+            groups=groups,
         )
         # TODO: ReduceMean 已收录，不支持
         self.mean_op = ops.ReduceMean(keep_dims=True)
@@ -77,8 +75,26 @@ class StdConv2d(nn.Conv2d):
         m = self.mean_op(w, [1, 2, 3])
         v = w.var((1, 2, 3), keepdims=True)
         w = (w - m) / mindspore.mint.sqrt(v + 1e-10)
-        output = self.conv2d(x, w)
-        return output
+
+        input_, is_batched = batchify(x, 2, "Conv2d")
+
+        output = self.conv2d(input_, w, self.bias, self.stride, self.padding, self.dilation, False, (0, 0), self.groups)
+        if is_batched:
+            return output
+        return output.square()
+
+
+def batchify(input, num_spatial_dims, ops_name):
+    """Conv input batchify"""
+    dim_count_no_batch = num_spatial_dims + 1
+    dim_count_batch = dim_count_no_batch + 1
+    is_batched = (input.ndim == dim_count_batch)
+    if not (input.ndim == dim_count_no_batch or is_batched):
+        raise TypeError(f"For {ops_name}, Expected {dim_count_no_batch}D (unbatched) or {dim_count_batch}D (batched)," \
+                        f"but got input of ndim: {input.ndim}D")
+    if is_batched:
+        return input, is_batched
+    return input.unsqueeze(0), is_batched
 
 
 class Bottleneck(nn.Cell):
@@ -113,11 +129,9 @@ class Bottleneck(nn.Cell):
         self.gn1 = norm(32, in_channels)
         self.conv1 = StdConv2d(in_channels, width, kernel_size=1, stride=1)
         self.gn2 = norm(32, width)
-        self.conv2 = StdConv2d(width, width, kernel_size=3, stride=stride,
-                               padding=1, pad_mode="pad", group=groups)
+        self.conv2 = StdConv2d(width, width, kernel_size=3, stride=stride, padding=1, groups=groups)
         self.gn3 = norm(32, width)
-        self.conv3 = StdConv2d(width, channels * self.expansion,
-                               kernel_size=1, stride=1)
+        self.conv3 = StdConv2d(width, channels * self.expansion, kernel_size=1, stride=1)
 
         self.relu = mint.nn.ReLU()
         self.down_sample = down_sample
@@ -183,8 +197,7 @@ class BiT_ResNet(nn.Cell):
         self.groups = groups
         self.base_with = base_width
 
-        self.conv1 = StdConv2d(in_channels, self.input_channels, kernel_size=7,
-                               stride=2, pad_mode="pad", padding=3)
+        self.conv1 = StdConv2d(in_channels, self.input_channels, kernel_size=7, stride=2, padding=3)
         # TODO: ConsttantPad2d 表格中不存在的接口，未转测，使用F.pad修改
         # self.pad = nn.ConstantPad2d(1, 0)
         self.max_pool = mint.nn.MaxPool2d(kernel_size=3, stride=2, padding=0)
