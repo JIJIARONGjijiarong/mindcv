@@ -147,7 +147,7 @@ class InvertedResidual(nn.Cell):
         layers.extend([
             # dw
             mint.nn.Conv2d(hidden_dim, hidden_dim, 3, stride, padding=1, groups=hidden_dim, bias=False),
-            nn.BatchNorm2d(hidden_dim),
+            mint.nn.BatchNorm2d(hidden_dim),
             # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
             # pw-linear
@@ -202,7 +202,7 @@ class MobileNetV2(nn.Cell):
         # Building stem conv layer.
         features = [
             mint.nn.Conv2d(in_channels, input_channels, 3, 2, padding=1, bias=False),
-            nn.BatchNorm2d(input_channels),
+            mint.nn.BatchNorm2d(input_channels),
             # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
         ]
@@ -228,7 +228,7 @@ class MobileNetV2(nn.Cell):
         # Building last point-wise layers.
         features.extend([
             mint.nn.Conv2d(input_channels, last_channels, 1, 1, padding=0, bias=False),
-            nn.BatchNorm2d(last_channels),
+            mint.nn.BatchNorm2d(last_channels),
             # TODO: nn.ReLu6 已收录，不支持
             nn.ReLU6(),
         ])
@@ -241,7 +241,7 @@ class MobileNetV2(nn.Cell):
         self.pool = GlobalAvgPooling()
         self.classifier = nn.SequentialCell([
             Dropout(p=0.2),  # confirmed by paper authors
-            nn.Dense(last_channels, num_classes),
+            mint.nn.Linear(last_channels, num_classes),
         ])
         self._initialize_weights()
 
@@ -255,10 +255,10 @@ class MobileNetV2(nn.Cell):
                                      cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer("zeros", cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.BatchNorm2d):
+            elif isinstance(cell, mint.nn.BatchNorm2d):
                 cell.gamma.set_data(init.initializer("ones", cell.gamma.shape, cell.gamma.dtype))
                 cell.beta.set_data(init.initializer("zeros", cell.beta.shape, cell.beta.dtype))
-            elif isinstance(cell, nn.Dense):
+            elif isinstance(cell, mint.nn.Linear):
                 cell.weight.set_data(
                     init.initializer(init.Normal(sigma=0.01, mean=0.0), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:

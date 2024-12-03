@@ -381,7 +381,7 @@ class VisionTransformer(nn.Cell):
                 cell.weight.set_data(init.initializer(init.TruncatedNormal(sigma=.02), cell.weight.data.shape))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
-            elif isinstance(cell, nn.LayerNorm):
+            elif isinstance(cell, mint.nn.LayerNorm):
                 cell.gamma.set_data(init.initializer(init.Constant(1), cell.gamma.shape))
                 cell.beta.set_data(init.initializer(init.Constant(0), cell.beta.shape))
 

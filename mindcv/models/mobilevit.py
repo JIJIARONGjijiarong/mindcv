@@ -55,7 +55,7 @@ class ConvLayer(nn.Cell):
                  groups: int = 1,
                  norm: Optional[nn.Cell] = mint.nn.BatchNorm2d,
                  activation: Optional[nn.Cell] = mint.nn.SiLU,
-                 has_bias: Optional[bool] = False) -> None:
+                 bias: Optional[bool] = False) -> None:
         super().__init__()
 
         if pad_mode == "pad":
@@ -64,20 +64,19 @@ class ConvLayer(nn.Cell):
         else:
             padding = 0
 
-        if has_bias is None:
-            has_bias = norm is None
+        if bias is None:
+            bias = norm is None
 
         layers = [
-            nn.Conv2d(
+            mint.nn.Conv2d(
                 in_channels,
                 out_channels,
                 kernel_size,
                 stride,
-                pad_mode=pad_mode,
                 padding=padding,
                 dilation=dilation,
-                group=groups,
-                has_bias=has_bias)
+                groups=groups,
+                bias=bias)
         ]
 
         if norm:
@@ -155,7 +154,7 @@ class InvertedResidual(nn.Cell):
                 in_channels=hidden_dim,
                 out_channels=out_channels,
                 kernel_size=1,
-                has_bias=False,
+                bias=False,
                 activation=None
             ),
         )
@@ -622,7 +621,7 @@ class MobileViT(nn.Cell):
                     cell.weight.set_data(init.initializer('ones', cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer('zeros', cell.bias.shape, cell.bias.dtype))
-            elif isinstance(cell, nn.Conv2d):
+            elif isinstance(cell, mint.nn.Conv2d):
                 if cell.weight is not None:
                     cell.weight.set_data(init.initializer(init.HeNormal(mode='fan_out', nonlinearity='leaky_relu'),
                                          cell.weight.shape, cell.weight.dtype))

@@ -185,7 +185,7 @@ class PyramidVisionTransformer(nn.Cell):
         drop_rate(float) : The drop rate for each block. Default: 0.0.
         attn_drop_rate(float) : The drop rate for attention. Default: 0.0.
         drop_path_rate(float) : The drop rate for drop path. Default: 0.0.
-        norm_layer(nn.Cell) : Norm layer that will be used in blocks. Default: nn.LayerNorm.
+        norm_layer(nn.Cell) : Norm layer that will be used in blocks. Default: mint.nn.LayerNorm.
         depths (list) : number of Blocks.
         sr_ratios(list) : stride and kernel size of each attention.
         num_stages(int) : number of stage. Default: 4.
