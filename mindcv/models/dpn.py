@@ -167,7 +167,6 @@ class DPN(nn.Cell):
             ("conv", mint.nn.Conv2d(in_channels, num_init_channel, kernel_size=7, stride=2, padding_mode="zeros", padding=3)),
             ("norm", mint.nn.BatchNorm2d(num_init_channel, eps=1e-3, momentum=0.9)),
             ("relu", mint.nn.ReLU()),
-            # TODO: check padding
             ("maxpool", mint.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
         ]))
 

@@ -7,10 +7,7 @@ import numpy as np
 
 import mindspore as ms
 import mindspore.common.initializer as init
-import mindspore.nn as nn
-import mindspore.ops as ops
-import mindspore.mint as mint
-from mindspore import Tensor
+from mindspore import Tensor, nn, ops, mint
 from mindspore import dtype as mstype
 from mindspore.common.initializer import TruncatedNormal
 

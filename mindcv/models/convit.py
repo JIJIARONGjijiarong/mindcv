@@ -62,10 +62,9 @@ def get_rel_indices(num_patches: int = 196) -> Tensor:
     indy_ = ops.repeat_elements(ind, rep=img_size, axis=0)
     indy = ops.repeat_elements(indy_, rep=img_size, axis=1)
     indd = indx**2 + indy**2
-    # TODO: ops.expand_dims 已收录，不支持
-    rel_indices[:, :, :, 2] = ops.expand_dims(indd, 0)
-    rel_indices[:, :, :, 1] = ops.expand_dims(indy, 0)
-    rel_indices[:, :, :, 0] = ops.expand_dims(indx, 0)
+    rel_indices[:, :, :, 2] = mint.unsqueeze(indd, 0)
+    rel_indices[:, :, :, 1] = mint.unsqueeze(indy, 0)
+    rel_indices[:, :, :, 0] = mint.unsqueeze(indx, 0)
     return rel_indices
 
 

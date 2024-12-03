@@ -2,9 +2,7 @@ import numpy as np
 
 import mindspore
 import mindspore.common.initializer as init
-import mindspore.nn as nn
-import mindspore.ops as ops
-import mindspore.mint as mint
+from mindspore import nn, mint
 
 from .helpers import _ntuple, load_pretrained
 from .layers import Dropout, DropPath, GlobalAvgPooling
@@ -147,9 +145,8 @@ class Block(nn.Cell):
             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale,
             attn_drop=attn_drop, proj_drop=drop, qk_ratio=qk_ratio, sr_ratio=sr_ratio)
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
-        # TODO: ops.Identity 已收录，不支持
         self.drop_path = DropPath(
-            drop_path) if drop_path > 0. else ops.Identity()
+            drop_path) if drop_path > 0. else mint.nn.Identity()
         self.norm2 = norm_layer([dim])
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
@@ -308,9 +305,8 @@ class CMT(nn.Cell):
         self._fc = mint.nn.Conv2d(embed_dims[-1], fc_dim, kernel_size=1, bias=True)
         self._bn = mint.nn.BatchNorm2d(fc_dim)
         self._drop = Dropout(p=drop_rate)
-        # ops.Identity 已收录，不支持
         self.head = mint.nn.Linear(
-            fc_dim, num_classes) if num_classes > 0 else ops.Identity()
+            fc_dim, num_classes) if num_classes > 0 else mint.nn.Identity()
 
         self._initialize_weights()
 

@@ -8,7 +8,6 @@ from typing import List, Optional, Type, Union
 import mindspore
 from mindspore import Tensor, nn, ops, mint
 import mindspore.mint.nn.functional as F
-from mindspore.ops.functional.nn_func import pad_ext
 
 from .helpers import load_pretrained
 from .layers.pooling import GlobalAvgPooling
@@ -198,8 +197,6 @@ class BiT_ResNet(nn.Cell):
         self.base_with = base_width
 
         self.conv1 = StdConv2d(in_channels, self.input_channels, kernel_size=7, stride=2, padding=3)
-        # TODO: ConsttantPad2d 表格中不存在的接口，未转测，使用F.pad修改
-        # self.pad = nn.ConstantPad2d(1, 0)
         self.max_pool = mint.nn.MaxPool2d(kernel_size=3, stride=2, padding=0)
 
         self.layer1 = self._make_layer(block, 64 * wf, layers[0])
@@ -256,7 +253,6 @@ class BiT_ResNet(nn.Cell):
 
     def root(self, x: Tensor) -> Tensor:
         x = self.conv1(x)
-        # TODO: 暂时使用mint.nn.functional as F 接口替代
         x = F.pad(x, (1, 1, 1, 1), value=0)
         x = self.max_pool(x)
         return x

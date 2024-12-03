@@ -53,7 +53,6 @@ class ConvLayer(nn.Cell):
                  padding: Optional[int] = None,
                  dilation: int = 1,
                  groups: int = 1,
-                 # TODO: nn.BatchNorm2d 数据类型
                  norm: Optional[nn.Cell] = mint.nn.BatchNorm2d,
                  activation: Optional[nn.Cell] = mint.nn.SiLU,
                  has_bias: Optional[bool] = False) -> None:
@@ -459,7 +458,7 @@ class MobileViTBlock(nn.Cell):
         return x, info_dict
 
     def folding(self, x: Tensor, info_dict: Dict) -> Tensor:
-        # TODO: ops.rank 未收录，不支持
+        # TODO: ops.rank 已收录，不支持
         n_dim = ops.rank(x)
         assert n_dim == 3, "Tensor should be of shape BPxNxC. Got: {}".format(
             x.shape

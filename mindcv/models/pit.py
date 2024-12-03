@@ -310,10 +310,8 @@ class PoolingTransformer(nn.Cell):
         self.num_classes = num_classes
 
         self.patch_size = patch_size
-        # TODO: mint np to tensor 接口
         self.pos_embed = Parameter(Tensor(np.random.randn(1, base_dims[0] * heads[0], width, width), mstype.float32))
         self.patch_embed = conv_embedding(in_chans, base_dims[0] * heads[0], patch_size, stride, padding)
-        # TODO: mint np to tensor 接口
         self.cls_token = Parameter(Tensor(np.random.randn(1, 1, base_dims[0] * heads[0]), mstype.float32))
 
         self.pos_drop = Dropout(p=drop_rate)

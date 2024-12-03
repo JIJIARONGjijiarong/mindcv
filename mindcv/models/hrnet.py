@@ -6,9 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import mindspore as ms
 import mindspore.nn as nn
-import mindspore.ops as ops
-import mindspore.mint as mint
-from mindspore import Tensor
+from mindspore import Tensor, nn, ops, mint
 
 from .helpers import build_model_with_cfg
 from .layers.pooling import GlobalAvgPooling
@@ -346,8 +344,7 @@ class HRModule(nn.Cell):
                     _, _, height, width = x2[i].shape
                     t = self.fuse_layers[i][j](x2[j])
                     t = ops.cast(t, ms.float32)
-                    # TODO: ops.ResizeNearestNeighbor 已收录，不支持
-                    t = ops.ResizeNearestNeighbor((height, width))(t)
+                    t = mint.nn.functional.interpolate((height, width))(t)
                     t = ops.cast(t, ms.float16)
                     y = y + t
                 else:

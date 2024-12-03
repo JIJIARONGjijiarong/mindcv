@@ -6,9 +6,7 @@ from typing import Union
 
 import mindspore
 import mindspore.common.initializer as init
-import mindspore.nn as nn
-import mindspore.mint as mint
-from mindspore import Tensor
+from mindspore import Tensor, nn, mint
 from mindspore.numpy import split
 
 from .helpers import load_pretrained
