@@ -248,7 +248,6 @@ class MobileNetV2(nn.Cell):
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
-            # TODO: mint.nn.Conv2d bias init
             if isinstance(cell, mint.nn.Conv2d):
                 n = cell.kernel_size[0] * cell.kernel_size[1] * cell.out_channels
                 cell.weight.set_data(
