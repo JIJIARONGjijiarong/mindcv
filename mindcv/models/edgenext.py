@@ -10,7 +10,7 @@ import numpy as np
 
 import mindspore as ms
 import mindspore.common.initializer as init
-from mindspore import Parameter, Tensor, nn, mint
+from mindspore import Parameter, Tensor, nn, ops, mint
 
 from .helpers import load_pretrained
 from .layers.compatibility import Dropout, Split
@@ -279,7 +279,8 @@ class XCA(nn.Cell):
         q = mint.permute(q, (0, 1, 3, 2))
         k = mint.permute(k, (0, 1, 3, 2))
         v = mint.permute(v, (0, 1, 3, 2))
-        l2_normalize = mint.nn.functional.normalize(-1)
+        # TODO: ops.L2Normalize 已收录，不支持
+        l2_normalize = ops.L2Normalize(-1)
         q = l2_normalize(q)
         k = l2_normalize(k)
         attn = (mint.matmul(q, mint.permute(k, (0, 1, 3, 2)))) * self.temperature

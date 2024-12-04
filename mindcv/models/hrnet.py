@@ -344,7 +344,7 @@ class HRModule(nn.Cell):
                     _, _, height, width = x2[i].shape
                     t = self.fuse_layers[i][j](x2[j])
                     t = ops.cast(t, ms.float32)
-                    t = mint.nn.functional.interpolate((height, width))(t)
+                    t = mint.nn.functional.interpolate(t, (height, width))
                     t = ops.cast(t, ms.float16)
                     y = y + t
                 else:

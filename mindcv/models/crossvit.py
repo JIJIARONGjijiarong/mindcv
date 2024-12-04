@@ -382,8 +382,8 @@ class VisionTransformer(nn.Cell):
                 if cell.bias is not None:
                     cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
             elif isinstance(cell, mint.nn.LayerNorm):
-                cell.gamma.set_data(init.initializer(init.Constant(1), cell.gamma.shape))
-                cell.beta.set_data(init.initializer(init.Constant(0), cell.beta.shape))
+                cell.weight.set_data(init.initializer(init.Constant(1), cell.weight.shape))
+                cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
 
     def no_weight_decay(self):
         out = {'cls_token'}
